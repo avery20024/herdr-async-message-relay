@@ -1,5 +1,7 @@
 # Herdr Async Message Relay
 
+**English** | [繁體中文](README.zh-TW.md)
+
 Durable async messaging for [Herdr](https://herdr.dev) agents, with stable role routing and batched delivery.
 
 **Queue now. Deliver when ready. Keep agents moving.**
@@ -137,6 +139,61 @@ The body is one literal argument. Flags precede the positional role/body; do not
 When no key is supplied, the client generates one. If a request's result is not confirmed, its error prints the key: inspect the queue or retry with that **same key and identical content**. Do not generate a new key to blindly resend a possibly committed message.
 
 A batch explicitly announces that it contains accumulated independent messages. Each message retains its ID, sender, recipient, original body, order, and start/end boundary. Messages are not merged into one conversational context. The envelope currently uses Traditional Chinese; configurable localization is not implemented.
+
+## Example: keep role identity when agents are auto-renamed
+
+An auto-rename plugin may change an agent or pane's display name to describe its current task. That display name need not be its stable routing role. If the role directories and agent CWDs stay unchanged, the optional [`herdr-send.sh` example](examples/herdr-send.sh) derives the **sender** from its current role directory instead of the display name, then calls the installed native `hrelay` command. This is a team-side convenience patch, not a dependency on or integration with a particular rename plugin. Recipient lookup remains the relay's CWD-based routing described above.
+
+Copy the example into **your team's** `scripts/` directory, not the plugin's managed checkout:
+
+```text
+team/
+├── scripts/
+│   └── herdr-send.sh
+└── 角色/
+    ├── dev/
+    └── gm/
+```
+
+```sh
+# From an existing source checkout; replace both absolute paths.
+TEAM=/absolute/path/to/team
+mkdir -p "$TEAM/scripts"
+cp /absolute/path/to/herdr-async-message-relay/examples/herdr-send.sh "$TEAM/scripts/herdr-send.sh"
+chmod +x "$TEAM/scripts/herdr-send.sh"
+
+# From the dev role directory, even if its display name has changed:
+cd "$TEAM/角色/dev"
+../../scripts/herdr-send.sh gm 'Task 123 is ready. Evidence: /absolute/path/to/report.md. Please review.'
+
+# From the team root, declare the actual sender explicitly:
+cd "$TEAM"
+HERDR_SEND_FROM=dev HERDR_SEND_IDEMPOTENCY_KEY=task-123-report-v1 \
+  ./scripts/herdr-send.sh gm 'Complete report and requested next step.'
+
+# Retry only with the same key, sender, recipient, and original body:
+HERDR_SEND_FROM=dev HERDR_SEND_IDEMPOTENCY_KEY=task-123-report-v1 \
+  ./scripts/herdr-send.sh gm 'Complete report and requested next step.'
+```
+
+The wrapper is equivalent to:
+
+```sh
+hrelay --root "$TEAM" send --from dev --key task-123-report-v1 gm 'Complete report and requested next step.'
+```
+
+Without `HERDR_SEND_IDEMPOTENCY_KEY`, the wrapper omits `--key`. Important boundaries:
+
+- Root comes from the script's parent directory. **Copy it to `<team-root>/scripts/herdr-send.sh` before use**; running it inside this repository's `examples/` would select this repository as root.
+- Sender inference uses the physical CWD of `角色/<role>` or a subdirectory. From elsewhere, set `HERDR_SEND_FROM` to the actual authorized sender. This wrapper uses `HERDR_SEND_FROM`, not the native CLI's `HERDR_RELAY_FROM`; it passes `--from` explicitly. Missing or ambiguous identity is rejected.
+- Both role directories must already exist. Names follow the same role-name rules as the native CLI. The literal `角色/` directory is still required; this example does not add a configurable or English-named role registry.
+- An auto-rename that changes only a display name does not affect this inference. Moving role directories or changing a recipient's reported CWD is different: live recipients must still report the exact role root or its resolved physical path. Sender inference from a subdirectory does not relax recipient matching.
+- Requires Bash and `hrelay` v0.2+ on the calling agent's PATH. No jq, plugin discovery, checkout binary fallback, or old `HERDR_RELAY_BIN` / `HERDR_DELIVER_BIN` override is used. The example retains Traditional Chinese diagnostics.
+- The body remains one unchanged argument, including newlines; use proper shell quoting. The wrapper neither reads rename-plugin data nor injects keys or direct prompts.
+- Short-form send ensures the same project service before enqueueing. First registration still needs the intended absolute `HERDR_SOCKET_PATH`; custom state/service paths must remain consistent. A persistent pause is not bypassed.
+- `accepted: true` still means stored, not read or task acceptance. Preserve the returned ID/key and follow the uncertainty rules above rather than blindly resending.
+
+For agents whose launcher already supplies `DELIVER_ROOT` and `HERDR_RELAY_FROM`, prefer `hrelay send ROLE MESSAGE` directly. Installing the plugin does not copy this optional script into a team or change its SOP.
 
 ## Configuration
 
