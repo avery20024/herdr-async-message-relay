@@ -6,6 +6,14 @@ Durable async messaging for [Herdr](https://herdr.dev) agents, with stable role 
 
 `hrelay` accepts a message into SQLite and returns without waiting for its recipient to become idle. A separate worker discovers the recipient's current pane and delivers queued messages when that role is ready. Busy recipients do not hold up senders or other roles.
 
+For configured agents, the native entry point is:
+
+```sh
+hrelay send gm 'Please inspect the report and decide the next step.'
+```
+
+See [agent setup and SOP integration](docs/agent-usage.md) and the optional [agent skill](skills/hrelay/SKILL.md). No project forwarding script is required.
+
 ## Features
 
 - **Durable acceptance:** respond only after the SQLite transaction commits; WAL and synchronous FULL.
@@ -22,30 +30,30 @@ This is an early release for macOS and Linux, arm64 and amd64. The Herdr compati
 
 Role discovery currently follows the convention `<team-root>/角色/<role>` (`角色` means “roles”). A role's live agent must report that exact CWD, or its resolved physical path, in `herdr agent list`. Role names are lowercase letters, digits, and hyphens, starting with a letter. A configurable routing registry is not implemented yet.
 
-The plugin package currently handles **installation and version inspection only**. It deliberately does not start a daemon, install a service manager, inject harness skills, or configure role directories automatically. Daemon lifecycle integration is a separate design step.
+Starting with v0.2.0, `service start` / `send --ensure` can register and start a **launchd user agent on macOS** or a **systemd user service on Linux**. The Herdr startup hook restores registered, unpaused projects. Installation alone cannot safely infer a project root, so first use must supply `--root` or `DELIVER_ROOT`. No shell background fork, automatic role-directory creation, PATH modification, or harness skill injection is performed. The team supplies root and sender context; the caller chooses the target role. The short form `send ROLE MESSAGE` ensures the service automatically.
 
 ## Install without Go
 
 ### As a Herdr plugin
 
-Once the matching Release is available:
+Install the pinned release:
 
 ```sh
-herdr plugin install avery20024/herdr-async-message-relay --ref v0.1.0
+herdr plugin install avery20024/herdr-async-message-relay --ref v0.2.0
 ```
 
-The manifest's install-time `build` command downloads the matching **precompiled** executable; it does not run the Go compiler. It detects the OS/architecture, downloads the version pinned in `VERSION`, verifies its SHA-256 checksum and embedded version, and atomically installs `bin/hrelay`.
+The manifest's install-time `build` command downloads the matching **precompiled** executable; it does not run the Go compiler. It detects the OS/architecture, downloads the version pinned in `VERSION`, verifies its SHA-256 checksum and embedded version, and atomically installs `bin/hrelay`. The same native binary installs an independent executable copy at `$HOME/.local/bin/hrelay` (or absolute `HERDR_RELAY_BIN_DIR`), protected by an ownership hash and lock. It refuses to overwrite foreign or modified entries; no symlink to the managed checkout or shell shim is used.
 
 Required installation tools: `sh`, `curl`, `tar`, `awk`, `mktemp`, and either `sha256sum` or `shasum`, plus ordinary Unix utilities. Herdr uses Git to obtain the plugin. No Go, Python, or sqlite3 CLI is needed to install or run the binary.
 
-Herdr does not automatically put plugin executables on PATH. Locate the installation using `herdr plugin list` and its `plugin_root` field; do not assume a managed checkout path. The manifest exposes a **Show relay version** action. The executable may also be called directly by its full path.
+Herdr does not modify agent PATH. The stable command is immediately usable only if its directory is already selected by that agent's PATH; otherwise the installer reports `on_path: false`. Configure PATH before agent launch or use the reported absolute path; an export in another terminal does not update live processes. Actions expose **Install or repair hrelay command**, **Show relay version**, **Show relay services**, and **Start registered relays**. To locate the managed binary for repair, query `herdr plugin list --json` and the enabled entry's `plugin_root`; never guess checkout hashes. Existing wrappers remain optional compatibility clients.
 
 ### From a checkout
 
 ```sh
 git clone https://github.com/avery20024/herdr-async-message-relay.git
 cd herdr-async-message-relay
-git checkout v0.1.0
+git checkout v0.2.0
 sh scripts/install-binary.sh
 ./bin/hrelay version
 ```
@@ -63,30 +71,66 @@ TEAM=/absolute/path/to/team
 mkdir -p "$TEAM/角色/dev" "$TEAM/角色/gm"
 ```
 
-Start the daemon **in the foreground**, or supervise the same command with launchd/systemd:
+### Automatic user service
+
+Run the first setup from a Herdr pane so `HERDR_SOCKET_PATH` identifies the intended server, or explicitly set that variable to its absolute socket path. The user service must not guess which Herdr server owns a project.
+
+```sh
+# Manual wake-up without sending a message:
+hrelay --root "$TEAM" server on
+
+# Direct native command: optional flags precede the positional role and body.
+hrelay --root "$TEAM" send --from dev --key example-report-1 gm 'Please inspect the report.'
+```
+
+On first use, the service snapshots the Herdr binary/socket context and worker settings, copies `hrelay` into durable private storage, and installs a per-project user service. Startup is bounded; a failure is reported before attempting to enqueue the new message. The positional `send ROLE MESSAGE` form ensures readiness by default. The original `send --to ROLE --body MESSAGE` flag form without `--ensure` retains the v0.1 manual-daemon behavior; `--ensure=false` explicitly selects manual mode for either form.
+
+A healthy existing daemon is reused, not killed or upgraded. Its project is registered for later restoration, but it remains **unmanaged** until it exits and a later ensure/restore starts a managed replacement. Stop that foreground daemon normally before expecting the OS service to own it. The operator must preserve any custom `DELIVER_STATE_DIR` and worker environment during first registration.
+
+```sh
+hrelay --root "$TEAM" server status
+hrelay --root "$TEAM" server off
+hrelay --root "$TEAM" server on
+hrelay --root "$TEAM" server restart
+hrelay service list       # Registered projects for this Herdr context
+hrelay service restore    # Restore enabled registrations only
+```
+
+`server on` is the friendly alias for `service start`; it starts an inactive relay or explicitly resumes a paused project, and does not restart a healthy daemon. `server off` aliases `service stop`, while `server status` aliases `service status`. These commands affect the explicitly configured **project**, not every project on the account. They do not need a sender role or a message body.
+
+`server restart` (also `service restart`) holds one lifecycle lock across stop, shutdown confirmation, and start. It waits for both the listener to disappear and the daemon's file lock to be released; failed shutdown leaves the project paused and no replacement is started. A never-registered inactive project can be started by restart too, but an unmanaged legacy listener is never forcibly terminated. Inspect any interrupted dispatch uncertainty rather than blindly retrying messages.
+
+`server off` / `service stop` persistently pauses the project and disables its login-time service. Neither `send --ensure` nor the startup hook will undo a pause; explicit `service start` is required. Stop refuses to terminate an unmanaged legacy daemon. A service-manager error remains an error: do not assume the process stopped just because the registry is paused.
+
+Each project has a lifecycle lock in addition to the existing SQLite daemon lock. Separate projects remain separate services; a different nonempty Herdr socket context cannot take over the same registration. Herdr install/link/enable/update does **not** run startup hooks immediately: use first-send ensure or an explicit start/restore action without restarting Herdr.
+
+The supervisor owns the daemon independently of a Herdr pane. The service can remain alive after Herdr exits, waiting for its socket to return. **Stop services before disabling or uninstalling the plugin**: Herdr has no uninstall hook to remove OS services automatically. No sudo or Linux linger configuration is applied. Linux requires a working systemd user session/DBus; macOS requires an available GUI launchd domain. Unsupported/headless setups should use the foreground mode below.
+
+### Foreground mode
+
+For manual supervision or troubleshooting:
 
 ```sh
 ./bin/hrelay --root "$TEAM" serve
 ```
 
-Do not start it with an untracked shell `&`. Stop the foreground process with Ctrl-C or let the service manager send SIGTERM. A single-instance lock prevents two workers from processing the same database. Updates do not restart an existing daemon automatically; stop the old supervised instance and start the new binary using the **same** root and state directory.
+Do not start it with an untracked shell `&`. Stop the foreground process with Ctrl-C. A single-instance lock prevents two workers from processing the same database. Plugin updates do not restart a healthy daemon automatically. For a managed upgrade or settings change, run `service stop`, then `service start` using the new binary and intended worker environment, with the **same** root and state directory. Interrupted dispatches may require the normal uncertainty inspection; do not force-retry them.
 
 The worker dispatches only to uniquely matched `idle` or `done` agents with a valid `state_change_seq`. Missing, duplicate, busy, blocked, or unknown seats remain queued. Herdr status discovery and prompt submission are not atomic; a seat can change between them.
 
 ## Send and inspect
 
-In a second terminal:
+Set `DELIVER_ROOT` and `HERDR_RELAY_FROM` in each agent's launch environment using its actual identity. For a configured `dev` seat:
 
 ```sh
-./bin/hrelay --root "$TEAM" send \
-  --from dev --to gm \
-  --key task-123-report-v1 \
-  --body 'Task 123 is ready. Evidence: /absolute/path/to/report.md. Please review.'
-
-./bin/hrelay --root "$TEAM" status
-./bin/hrelay --root "$TEAM" show msg-<id>
-./bin/hrelay --root "$TEAM" show batch-<id>
+hrelay send gm 'Task 123 is ready. Evidence: /absolute/path/to/report.md. Please review.'
+hrelay send --key task-123-report-v2 gm 'Updated report with complete context.'
+hrelay status
+hrelay show msg-<id>
+hrelay show batch-<id>
 ```
+
+The body is one literal argument. Flags precede the positional role/body; do not mix them with `--to`/`--body`. Missing sender context is an error, not inferred from chat or a pane id. An already-running seat without configured environment can use `hrelay --root "$TEAM" send --from dev gm 'Report body'` with its actual authorized sender. The original explicit flag form remains supported.
 
 `accepted: true` means **stored**, not delivered, read, or approved. Reusing a key with the same sender, recipient, and body returns the existing message ID. Reusing it with different content returns a conflict. New or revised reports need a new key.
 
@@ -96,14 +140,16 @@ A batch explicitly announces that it contains accumulated independent messages. 
 
 ## Configuration
 
-Read at process startup. Restart the daemon to change worker settings.
+Foreground settings are read at startup. Managed services snapshot settings at registration; normal send/restore does not overwrite them. To change batch/poll settings, stop the service, set the desired environment, and explicitly start it again. The registered Herdr context is not silently rebound.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `DELIVER_BATCH_SIZE` | `3` | Maximum messages per batch, 1–100 |
 | `DELIVER_BATCH_BYTES` | `12000` | Maximum rendered batch bytes, 2048–64000; individual body limit is this value minus 1024 |
 | `DELIVER_POLL_MS` | `500` | Scan interval in milliseconds, 50–60000 |
-| `DELIVER_ROOT` | Working directory | Team root; `--root` overrides it |
+| `DELIVER_ROOT` | Working directory | Team root; configure explicitly for agents; `--root` overrides it |
+| `HERDR_RELAY_FROM` | None | Actual sender role supplied by the team launcher; `--from` overrides it |
+| `HERDR_RELAY_BIN_DIR` | `$HOME/.local/bin` | Stable CLI installation directory; absolute path; not a project/service setting |
 | `DELIVER_STATE_DIR` | Root-scoped directory below | Explicit state/socket location; clients and daemon must agree |
 | `HERDR_BIN_PATH` | `herdr` | Herdr binary used for discovery and submission |
 
@@ -121,7 +167,9 @@ ${XDG_STATE_HOME:-$HOME/.local/state}/herdr-deliver/<canonical-team-root-hash>/
 
 It holds `queue.db`, SQLite WAL/SHM, `deliver.sock`, and `daemon.lock`. Directory permissions are 0700; the database and socket are 0600. A database is bound to one canonical root and cannot be reused for a different project root. Multiple Herdr servers are not automatically isolated: use distinct state directories and consistent Herdr connection environments where needed.
 
-Never put durable state inside a Herdr-managed plugin checkout. Explicit `DELIVER_STATE_DIR` may point into `HERDR_PLUGIN_STATE_DIR` when future lifecycle integration supplies a consistent location to both daemon and clients; this package does not perform that migration automatically. A shorter explicit path is also useful if the Unix socket path exceeds the platform limit.
+Never put durable state inside a Herdr-managed plugin checkout. The service registry and content-addressed executable snapshots live separately under `${XDG_STATE_HOME:-$HOME/.local/state}/herdr-async-message-relay/services/`, overridable with an absolute `HERDR_RELAY_SERVICE_HOME` that must match for callers and startup hooks. This deliberately does not depend on `HERDR_PLUGIN_STATE_DIR`, which is absent in ordinary caller shells. The queue location above is unchanged; no automatic database migration occurs. A shorter explicit `DELIVER_STATE_DIR` is useful if the Unix socket path exceeds the platform limit.
+
+The registry stores root, queue path, allowlisted environment, and supervision state in 0600 JSON files inside 0700 directories. Only selected Herdr/context and worker settings are persisted, not the caller's full environment. launchd definitions are under `~/Library/LaunchAgents/`; systemd definitions are under `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/`. launchd logs go to the project's registry directory (`service.log`); Linux logs are in `journalctl --user -u <unit>`. Registry snapshots and macOS logs are not automatically pruned; arrange retention as needed. Service paths/environment containing control characters are rejected.
 
 Do not shrink the batch byte limit below what an already queued message requires; its role will remain blocked until a sufficient limit is restored. The 500 ms interval is not a delivery-latency SLA: discovery, queue load, concurrency limits, and submission observation take additional time.
 
@@ -177,7 +225,7 @@ make build
 herdr plugin link "$PWD"
 ```
 
-The source of application SQL is `db/queries`; generated code is under `internal/sqlc`. Tests use temporary SQLite databases, Unix sockets, fake Herdr commands, and fake downloaders. They do not notify live agents or start TCP listeners.
+The source of application SQL is `db/queries`; generated code is under `internal/sqlc`. Tests use temporary SQLite databases, Unix sockets, fake Herdr commands, fake launchctl/systemctl runners, and fake downloaders. They do not notify live agents, invoke real OS service managers, or start TCP listeners. Native service-manager smoke testing is a separate explicitly controlled step.
 
 ## Releases
 
@@ -194,7 +242,7 @@ To build an archive locally:
 sh scripts/package.sh darwin arm64
 ```
 
-Cross-compilation alone does not establish native runtime compatibility on every target; Linux/macOS native CI supplements it. Plugin daemon supervision, general role registries, harness adapters, read receipts, automatic retention, and marketplace listing are separate future work.
+Cross-compilation alone does not establish native runtime compatibility on every target; Linux/macOS native CI supplements it. General role registries, harness adapters, read receipts, and automatic retention are separate future work. The plugin never infers business roles. The launcher/SOP supplies project and sender context; the caller chooses the recipient. Team-specific wrappers can remain as compatibility clients, but native CLI use does not depend on them.
 
 ## License
 

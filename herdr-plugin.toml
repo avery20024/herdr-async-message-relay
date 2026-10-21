@@ -1,12 +1,33 @@
 id = "herdr-async-message-relay"
 name = "Herdr Async Message Relay"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.9.3"
 description = "Durable async messaging with stable role routing and batched delivery."
 platforms = ["macos", "linux"]
 
 [[build]]
 command = ["sh", "scripts/install-binary.sh"]
+
+[[startup]]
+command = ["bin/hrelay", "service", "restore"]
+
+[[actions]]
+id = "restore"
+title = "Start registered relays"
+contexts = ["workspace"]
+command = ["bin/hrelay", "service", "restore"]
+
+[[actions]]
+id = "services"
+title = "Show relay services"
+contexts = ["workspace"]
+command = ["bin/hrelay", "service", "list"]
+
+[[actions]]
+id = "install-cli"
+title = "Install or repair hrelay command"
+contexts = ["workspace"]
+command = ["bin/hrelay", "cli", "install"]
 
 [[actions]]
 id = "version"

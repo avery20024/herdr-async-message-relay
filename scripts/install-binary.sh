@@ -1,5 +1,5 @@
 #!/bin/sh
-# 安裝固定版本的預編譯成品；不需要 Go，也不自動啟動服務。
+# 安裝固定版本及穩定的原生 CLI 入口；不需要 Go，也不自動啟動專案服務。
 set -eu
 fail() { printf 'hrelay installer: %s\n' "$*" >&2; exit 1; }
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
@@ -55,6 +55,8 @@ mkdir -p "$ROOT/bin"
 STAGED=$(mktemp "$ROOT/bin/.hrelay.XXXXXX")
 cp "$WORK/unpacked/hrelay" "$STAGED"
 chmod 755 "$STAGED"
+# 由同一個原生執行檔安裝穩定副本；拒絕覆寫其他來源，不修改 shell／agent 設定。
+"$WORK/unpacked/hrelay" cli install || fail 'cannot install stable CLI; existing plugin binary was not replaced'
 cp "$WORK/unpacked/THIRD_PARTY_NOTICES.txt" "$ROOT/bin/THIRD_PARTY_NOTICES.txt"
 mv -f "$STAGED" "$ROOT/bin/hrelay"
 STAGED=''

@@ -26,7 +26,8 @@ class InstallerTest(unittest.TestCase):
         self.tools = self.root / "tools"
         self.tools.mkdir()
         self.env = dict(os.environ, PATH=str(self.tools) + os.pathsep + os.environ["PATH"],
-                        TEST_ROOT=str(self.root), TEST_OS="Darwin", TEST_ARCH="arm64")
+                        TEST_ROOT=str(self.root), TEST_OS="Darwin", TEST_ARCH="arm64",
+                        HOME=str(self.root / "home"), HERDR_RELAY_BIN_DIR=str(self.root / "home/.local/bin"))
         self.mock("uname", 'print(os.environ["TEST_OS"] if sys.argv[1] == "-s" else os.environ["TEST_ARCH"])')
         self.mock("curl", '''
 root = pathlib.Path(os.environ["TEST_ROOT"])
@@ -51,7 +52,14 @@ shutil.copyfile(root / "downloads" / url.rsplit("/", 1)[1], sys.argv[sys.argv.in
     def archive(self, version="v0.1.0", extra=None, symlink=False):
         path = self.downloads / self.asset
         with tarfile.open(path, "w:gz") as tar:
-            content = f"#!/bin/sh\nprintf 'hrelay {version}\\n'\n".encode()
+            content = f'''#!/bin/sh
+if [ "$1" = version ]; then printf 'hrelay {version}\\n'
+elif [ "$1" = cli ] && [ "$2" = install ]; then
+    printf '%s\\n' "$*" > "$TEST_ROOT/cli-install-call"
+    [ "${{TEST_CLI_INSTALL_FAIL:-0}}" != 1 ] || exit 1
+else exit 64
+fi
+'''.encode()
             if symlink:
                 info = tarfile.TarInfo("hrelay")
                 info.type = tarfile.SYMTYPE
@@ -97,6 +105,7 @@ shutil.copyfile(root / "downloads" / url.rsplit("/", 1)[1], sys.argv[sys.argv.in
         self.assertEqual(len(urls), 2)
         self.assertTrue(all("/v0.1.0/" in url for url in urls))
         self.assertEqual(list((self.root / "bin").glob(".hrelay.*")), [])
+        self.assertEqual((self.root / "cli-install-call").read_text(), "cli install\n")
 
     def test_platform_matrix(self):
         for system, arch, os_name, arch_name in (("Darwin", "x86_64", "darwin", "amd64"),
@@ -151,6 +160,13 @@ shutil.copyfile(root / "downloads" / url.rsplit("/", 1)[1], sys.argv[sys.argv.in
         self.assertIn("version does not match", result.stderr)
         self.assertEqual(old.read_text(), "keep existing binary")
 
+    def test_stable_cli_failure_preserves_existing_plugin_binary(self):
+        old = self.old_binary()
+        self.env["TEST_CLI_INSTALL_FAIL"] = "1"
+        result = self.install(False)
+        self.assertIn("cannot install stable CLI", result.stderr)
+        self.assertEqual(old.read_text(), "keep existing binary")
+
     def test_invalid_version_does_not_download(self):
         (self.root / "VERSION").write_text("../../latest\n")
         self.install(False)
@@ -166,7 +182,11 @@ class ManifestTest(unittest.TestCase):
         for line in ('id = "herdr-async-message-relay"', 'platforms = ["macos", "linux"]',
                      'command = ["sh", "scripts/install-binary.sh"]', 'command = ["bin/hrelay", "version"]'):
             self.assertIn(line, manifest)
-        self.assertNotIn("[[startup]]", manifest)
+        self.assertIn('[[startup]]\ncommand = ["bin/hrelay", "service", "restore"]', manifest)
+        self.assertIn('command = ["bin/hrelay", "service", "list"]', manifest)
+        self.assertIn('command = ["bin/hrelay", "cli", "install"]', manifest)
+        self.assertTrue((ROOT / "skills/hrelay/SKILL.md").is_file())
+        self.assertTrue((ROOT / "docs/agent-usage.md").is_file())
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/avery20024/herdr-async-message-relay/internal/deliver"
+	"github.com/avery20024/herdr-async-message-relay/internal/service"
 )
 
 // version 由發布建置的 ldflags 注入；開發時直接 go run 則顯示 dev。
@@ -64,11 +65,20 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	if global.NArg() < 1 {
-		return errors.New("usage: hrelay [--root PATH] version|serve|send|status|show|resolve")
+		return errors.New("usage: hrelay [--root PATH] version|cli|server|service|serve|send|status|show|resolve")
 	}
 	if global.NArg() == 1 && global.Arg(0) == "version" {
 		_, err := fmt.Fprintf(os.Stdout, "hrelay %s\n", version)
 		return err
+	}
+	if global.Arg(0) == "cli" {
+		return runCLIInstall(ctx, global.Args()[1:])
+	}
+	if global.Arg(0) == "server" {
+		return runServer(ctx, *root, global.Args()[1:])
+	}
+	if global.Arg(0) == "service" {
+		return runService(ctx, *root, global.Args()[1:])
 	}
 	c, err := deliver.LoadConfig(*root)
 	if err != nil {
@@ -83,20 +93,48 @@ func run(ctx context.Context, args []string) error {
 		}
 		return deliver.Serve(ctx, c, slog.Default())
 	case "send":
-		from := f.String("from", "", "sender role")
+		from := f.String("from", os.Getenv("HERDR_RELAY_FROM"), "sender role; defaults to HERDR_RELAY_FROM")
 		to := f.String("to", "", "recipient role")
 		body := f.String("body", "", "exact message body")
 		key := f.String("key", "", "idempotency key; reuse for network retries")
+		ensure := f.Bool("ensure", false, "ensure a supervised relay is ready before enqueue")
 		if err := f.Parse(rest); err != nil {
 			return err
 		}
-		if f.NArg() != 0 {
-			return errors.New("unexpected send arguments")
+		specified := make(map[string]bool)
+		f.Visit(func(option *flag.Flag) { specified[option.Name] = true })
+		short := f.NArg() != 0
+		if short {
+			if f.NArg() != 2 || specified["to"] || specified["body"] {
+				return errors.New("usage: hrelay send [--from ROLE] [--key KEY] ROLE MESSAGE; do not mix positional and --to/--body forms")
+			}
+			*to, *body = f.Arg(0), f.Arg(1)
+			if !specified["ensure"] {
+				*ensure = true
+			}
 		}
 		if *key == "" {
 			*key = deliver.NewID("key-")
 		}
-		err := call(ctx, c, "POST", "/v1/messages", deliver.SendRequest{Sender: *from, Recipient: *to, Body: *body, Key: *key})
+		request := deliver.SendRequest{Sender: *from, Recipient: *to, Body: *body, Key: *key}
+		if short || *ensure {
+			if *from == "" {
+				return errors.New("sender role is required: set HERDR_RELAY_FROM in the agent environment or pass --from; hrelay does not guess roles")
+			}
+			if err := c.Validate(request); err != nil {
+				return err
+			}
+		}
+		if *ensure {
+			manager, err := service.New()
+			if err != nil {
+				return err
+			}
+			if err := manager.Ensure(ctx, c, false); err != nil {
+				return fmt.Errorf("relay startup failed; no message was enqueued: %w", err)
+			}
+		}
+		err := call(ctx, c, "POST", "/v1/messages", request)
 		if err != nil {
 			return fmt.Errorf("send not confirmed; it may already be stored. Inspect status or retry identical content with --key %q: %w", *key, err)
 		}
