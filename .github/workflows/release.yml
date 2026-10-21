@@ -63,4 +63,6 @@ jobs:
           test "$(find . -maxdepth 1 -name 'hrelay_*.tar.gz' | wc -l | tr -d ' ')" = 4
           sha256sum hrelay_*.tar.gz > checksums.txt
           gh release create "$TAG" hrelay_*.tar.gz checksums.txt \
-            --verify-tag --title "$TAG" --generate-notes
+            --draft --verify-tag --title "$TAG" --generate-notes
+          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" = 5
+          gh release edit "$TAG" --draft=false
