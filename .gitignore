@@ -1,0 +1,10 @@
+/bin/
+/dist/
+__pycache__/
+.DS_Store
+.env
+*.log
+*.db
+*.db-shm
+*.db-wal
+*.sock
