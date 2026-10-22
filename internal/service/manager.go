@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/avery20024/herdr-async-message-relay/internal/deliver"
+	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 )
 
 type Record struct {
@@ -79,7 +80,7 @@ func run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	cmd.WaitDelay = time.Second
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("%s %v: %w: %s", name, args, err, strings.TrimSpace(string(out)))
+		return nil, i18n.Errorf("%s %v: %w: %s", name, args, err, strings.TrimSpace(string(out)))
 	}
 	return out, nil
 }
@@ -100,20 +101,20 @@ func probe(ctx context.Context, c deliver.Config) (bool, error) {
 		if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
 			return false, nil
 		}
-		return false, fmt.Errorf("cannot safely determine relay health: %w", err)
+		return false, i18n.Errorf("cannot safely determine relay health: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("existing relay returned HTTP %d; refusing takeover", resp.StatusCode)
+		return false, i18n.Errorf("existing relay returned HTTP %d; refusing takeover", resp.StatusCode)
 	}
 	var body struct {
 		Root string `json:"project_root"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(nil, resp.Body, 2*1024*1024)).Decode(&body); err != nil {
-		return false, fmt.Errorf("invalid existing relay response: %w", err)
+		return false, i18n.Errorf("invalid existing relay response: %w", err)
 	}
 	if body.Root != c.Root {
-		return false, errors.New("existing relay belongs to a different project; refusing takeover")
+		return false, i18n.NewError("existing relay belongs to a different project; refusing takeover")
 	}
 	return true, nil
 }
@@ -135,7 +136,7 @@ func privateDir(path string) error {
 		return err
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("service directory must not be a symlink: %s", path)
+		return i18n.Errorf("service directory must not be a symlink: %s", path)
 	}
 	return os.Chmod(path, 0700)
 }
@@ -164,7 +165,7 @@ func atomicWrite(path string, body []byte, mode os.FileMode) error {
 
 func (m *Manager) lock(ctx context.Context, c deliver.Config) (func(), error) {
 	if len(c.Socket()) > 100 {
-		return nil, errors.New("Unix socket path too long; set a shorter DELIVER_STATE_DIR")
+		return nil, i18n.NewError("Unix socket path too long; set a shorter DELIVER_STATE_DIR")
 	}
 	if err := privateDir(m.Base); err != nil {
 		return nil, err
@@ -207,7 +208,7 @@ func (m *Manager) load(c deliver.Config) (Record, error) {
 		return r, err
 	}
 	if r.Config.Root != c.Root || r.Config.StateDir != c.StateDir {
-		return r, errors.New("service record has an incompatible schema or project binding")
+		return r, i18n.NewError("service record has an incompatible schema or project binding")
 	}
 	return r, nil
 }
@@ -216,7 +217,7 @@ func validateRecord(r Record) error {
 		!filepath.IsAbs(r.Config.Herdr) || !filepath.IsAbs(r.Environment["HERDR_SOCKET_PATH"]) ||
 		r.Config.BatchSize < 1 || r.Config.BatchSize > 100 || r.Config.BatchBytes < 2048 || r.Config.BatchBytes > 64000 ||
 		r.Config.Poll < 50*time.Millisecond || r.Config.Poll > time.Minute {
-		return errors.New("invalid service schema, settings or Herdr context binding")
+		return i18n.NewError("invalid service schema, settings or Herdr context binding")
 	}
 	return nil
 }
@@ -242,7 +243,7 @@ func (m *Manager) newRecord(c deliver.Config) (Record, error) {
 		}
 	}
 	if !filepath.IsAbs(env["HERDR_SOCKET_PATH"]) {
-		return Record{}, errors.New("first service setup requires an absolute HERDR_SOCKET_PATH; run from a Herdr pane or set its socket explicitly")
+		return Record{}, i18n.NewError("first service setup requires an absolute HERDR_SOCKET_PATH; run from a Herdr pane or set its socket explicitly")
 	}
 	env["HOME"] = m.Home
 	herdr := c.Herdr
@@ -250,7 +251,7 @@ func (m *Manager) newRecord(c deliver.Config) (Record, error) {
 		var err error
 		herdr, err = exec.LookPath(herdr)
 		if err != nil {
-			return Record{}, fmt.Errorf("cannot locate Herdr for supervised service: %w", err)
+			return Record{}, i18n.Errorf("cannot locate Herdr for supervised service: %w", err)
 		}
 	}
 	herdr, err := filepath.Abs(herdr)
@@ -270,7 +271,7 @@ func (m *Manager) checkContext(r Record) error {
 	for _, item := range m.Environment {
 		if name, value, ok := strings.Cut(item, "="); ok && name == "HERDR_SOCKET_PATH" && value != "" {
 			if stored := r.Environment[name]; value != stored {
-				return errors.New("project is registered to a different Herdr socket; refusing takeover")
+				return i18n.NewError("project is registered to a different Herdr socket; refusing takeover")
 			}
 		}
 	}
@@ -282,7 +283,7 @@ func (m *Manager) Ensure(ctx context.Context, c deliver.Config, resume bool) err
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	if info, err := os.Stat(filepath.Join(c.Root, "角色")); err != nil || !info.IsDir() {
-		return fmt.Errorf("registered project must still contain a 角色 directory: %s", c.Root)
+		return i18n.Errorf("registered project must still contain a 角色 directory: %s", c.Root)
 	}
 	unlock, err := m.lock(ctx, c)
 	if err != nil {
@@ -294,7 +295,7 @@ func (m *Manager) Ensure(ctx context.Context, c deliver.Config, resume bool) err
 
 func (m *Manager) ensureLocked(ctx context.Context, c deliver.Config, resume bool) error {
 	if info, err := os.Stat(filepath.Join(c.Root, "角色")); err != nil || !info.IsDir() {
-		return fmt.Errorf("registered project must still contain a 角色 directory: %s", c.Root)
+		return i18n.Errorf("registered project must still contain a 角色 directory: %s", c.Root)
 	}
 	r, err := m.load(c)
 	if errors.Is(err, os.ErrNotExist) {
@@ -307,7 +308,7 @@ func (m *Manager) ensureLocked(ctx context.Context, c deliver.Config, resume boo
 		return err
 	}
 	if !r.AutoStart && !resume {
-		return errors.New("relay service is paused; explicitly run service start to resume")
+		return i18n.NewError("relay service is paused; explicitly run service start to resume")
 	}
 	ready, err := m.probe(ctx, c)
 	if err != nil {
@@ -332,7 +333,7 @@ func (m *Manager) ensureLocked(ctx context.Context, c deliver.Config, resume boo
 		r.Environment["DELIVER_POLL_MS"] = strconv.FormatInt(c.Poll.Milliseconds(), 10)
 	}
 	if m.Platform != "darwin" && m.Platform != "linux" {
-		return errors.New("automatic service management supports macOS launchd or Linux systemd --user only")
+		return i18n.NewError("automatic service management supports macOS launchd or Linux systemd --user only")
 	}
 	binary, err := os.ReadFile(m.Executable)
 	if err != nil {
@@ -347,7 +348,7 @@ func (m *Manager) ensureLocked(ctx context.Context, c deliver.Config, resume boo
 		return err
 	}
 	if err = m.start(ctx, r); err != nil {
-		return fmt.Errorf("cannot start supervised relay: %w", err)
+		return i18n.Errorf("cannot start supervised relay: %w", err)
 	}
 	deadline := time.NewTimer(m.wait)
 	defer deadline.Stop()
@@ -363,7 +364,7 @@ func (m *Manager) ensureLocked(ctx context.Context, c deliver.Config, resume boo
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return errors.New("service did not become ready; inspect launchd log or systemd user journal, no message was enqueued")
+			return i18n.NewError("service did not become ready; inspect launchd log or systemd user journal, no message was enqueued")
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
@@ -392,7 +393,7 @@ func (m *Manager) stopLocked(ctx context.Context, c deliver.Config) error {
 		return err
 	}
 	if !r.Managed {
-		return errors.New("existing relay is not managed by this plugin; no process was stopped")
+		return i18n.NewError("existing relay is not managed by this plugin; no process was stopped")
 	}
 	r.AutoStart = false
 	if err = m.save(r); err != nil {
@@ -426,10 +427,10 @@ func (m *Manager) records() ([]Record, error) {
 		}
 		var r Record
 		if err = json.Unmarshal(body, &r); err != nil {
-			return nil, fmt.Errorf("invalid registry %s: %w", path, err)
+			return nil, i18n.Errorf("invalid registry %s: %w", path, err)
 		}
 		if validateRecord(r) != nil || path != m.recordPath(r.Config) {
-			return nil, fmt.Errorf("invalid project binding in %s", path)
+			return nil, i18n.Errorf("invalid project binding in %s", path)
 		}
 		records = append(records, r)
 	}
@@ -447,7 +448,7 @@ func (m *Manager) Restore(ctx context.Context) error {
 			continue
 		}
 		if err := m.Ensure(ctx, r.Config, false); err != nil {
-			failures = append(failures, fmt.Errorf("%s: %w", r.Config.Root, err))
+			failures = append(failures, i18n.Errorf("%s: %w", r.Config.Root, err))
 		}
 	}
 	return errors.Join(failures...)

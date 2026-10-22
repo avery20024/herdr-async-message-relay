@@ -107,7 +107,7 @@ func TestUnixDaemonEndToEndAndSingleInstance(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	prompt, err := os.ReadFile(promptLog)
-	if err != nil || !strings.Contains(string(prompt), "original\nmessage") || !strings.Contains(string(prompt), "積壓訊息一次通知") {
+	if err != nil || !strings.Contains(string(prompt), "original\nmessage") || !strings.Contains(string(prompt), "[hrelay | batch ") {
 		t.Fatalf("%s %v", prompt, err)
 	}
 }

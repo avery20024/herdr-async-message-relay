@@ -3,13 +3,13 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/avery20024/herdr-async-message-relay/internal/deliver"
+	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 )
 
 // Restart 將停用、關閉確認及恢復放在同一生命週期鎖，避免發送端搶先喚醒。
@@ -28,7 +28,7 @@ func (m *Manager) Restart(ctx context.Context, c deliver.Config) error {
 			return probeErr
 		}
 		if ready {
-			return errors.New("existing relay is not managed by this plugin; no process was restarted")
+			return i18n.NewError("existing relay is not managed by this plugin; no process was restarted")
 		}
 		return m.ensureLocked(ctx, c, true)
 	}
@@ -59,7 +59,7 @@ func daemonLockFree(c deliver.Config) (bool, error) {
 		return false, err
 	}
 	if !info.Mode().IsRegular() {
-		return false, errors.New("daemon lock must be a regular file")
+		return false, i18n.NewError("daemon lock must be a regular file")
 	}
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
@@ -89,7 +89,7 @@ func (m *Manager) waitStopped(ctx context.Context, c deliver.Config) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("relay shutdown not confirmed; service remains paused, no replacement started (health error: %v)", probeErr)
+			return i18n.Errorf("relay shutdown not confirmed; service remains paused, no replacement started (health error: %v)", probeErr)
 		case <-time.After(50 * time.Millisecond):
 		}
 	}

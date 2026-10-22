@@ -7,13 +7,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 )
 
 type Result struct {
@@ -67,7 +68,7 @@ func readRegular(path string) ([]byte, error) {
 		return nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("refusing non-regular CLI installation file: %s", path)
+		return nil, i18n.Errorf("refusing non-regular CLI installation file: %s", path)
 	}
 	return os.ReadFile(path)
 }
@@ -77,7 +78,7 @@ func Install(ctx context.Context, source, binDir string) (Result, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if !filepath.IsAbs(binDir) || strings.ContainsFunc(binDir, func(r rune) bool { return r < 32 || r == 127 }) {
-		return Result{}, errors.New("CLI bin directory must be an absolute path without control characters")
+		return Result{}, i18n.NewError("CLI bin directory must be an absolute path without control characters")
 	}
 	if err := os.MkdirAll(binDir, 0700); err != nil {
 		return Result{}, err
@@ -114,7 +115,7 @@ func Install(ctx context.Context, source, binDir string) (Result, error) {
 		return Result{}, err
 	}
 	if len(body) == 0 {
-		return Result{}, errors.New("cannot install an empty CLI binary")
+		return Result{}, i18n.NewError("cannot install an empty CLI binary")
 	}
 	target := filepath.Join(binDir, "hrelay")
 	marker := filepath.Join(binDir, ".hrelay-install.json")
@@ -129,13 +130,13 @@ func Install(ctx context.Context, source, binDir string) (Result, error) {
 	if markerErr == nil {
 		var owner ownership
 		if json.Unmarshal(owned, &owner) != nil || owner.Schema != 1 || len(owner.SHA256) != 64 {
-			return Result{}, errors.New("invalid CLI ownership record; inspect the installation before retrying")
+			return Result{}, i18n.NewError("invalid CLI ownership record; inspect the installation before retrying")
 		}
 		if targetErr == nil && digest(previous) != owner.SHA256 {
-			return Result{}, errors.New("existing hrelay differs from its ownership record; refusing to overwrite")
+			return Result{}, i18n.NewError("existing hrelay differs from its ownership record; refusing to overwrite")
 		}
 	} else if targetErr == nil {
-		return Result{}, fmt.Errorf("existing hrelay is not owned by this installer: %s; choose another --bin-dir", target)
+		return Result{}, i18n.Errorf("existing hrelay is not owned by this installer: %s; choose another --bin-dir", target)
 	}
 	if err := atomicWrite(target, body, 0755); err != nil {
 		return Result{}, err
@@ -145,7 +146,7 @@ func Install(ctx context.Context, source, binDir string) (Result, error) {
 		return Result{}, err
 	}
 	if err := atomicWrite(marker, append(record, '\n'), 0600); err != nil {
-		return Result{}, fmt.Errorf("CLI copied but ownership record could not be saved; inspect before retrying: %w", err)
+		return Result{}, i18n.Errorf("CLI copied but ownership record could not be saved; inspect before retrying: %w", err)
 	}
 	result := Result{Path: target}
 	if found, err := exec.LookPath("hrelay"); err == nil {

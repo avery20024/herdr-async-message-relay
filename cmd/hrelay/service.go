@@ -3,17 +3,16 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"os"
 
 	"github.com/avery20024/herdr-async-message-relay/internal/deliver"
+	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 	"github.com/avery20024/herdr-async-message-relay/internal/service"
 )
 
 func runService(ctx context.Context, root string, args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: hrelay [--root PATH] service ensure|start|stop|restart|status|restore|list")
+		return i18n.NewError("usage: hrelay [--root PATH] service ensure|start|stop|restart|status|restore|list")
 	}
 	m, err := service.New()
 	if err != nil {
@@ -51,6 +50,6 @@ func runService(ctx context.Context, root string, args []string) error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(status)
 	default:
-		return fmt.Errorf("unknown service command %q", args[0])
+		return i18n.Errorf("unknown service command %q", args[0])
 	}
 }

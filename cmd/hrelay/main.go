@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/avery20024/herdr-async-message-relay/internal/deliver"
+	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 	"github.com/avery20024/herdr-async-message-relay/internal/service"
 )
 
@@ -52,20 +53,49 @@ func call(ctx context.Context, c deliver.Config, method, path string, input any)
 		return err
 	}
 	if resp.StatusCode >= 300 {
+		// API 錯誤原文屬於協定證據，不依 CLI 語系改寫。
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	_, err = os.Stdout.Write(body)
 	return err
 }
 
-func run(ctx context.Context, args []string) error {
-	global := flag.NewFlagSet("hrelay", flag.ContinueOnError)
+func newFlags(name string) *flag.FlagSet {
+	f := flag.NewFlagSet(name, flag.ContinueOnError)
+	// 先抑制標準套件自動輸出，選定語系後才顯示說明或回報錯誤。
+	f.SetOutput(io.Discard)
+	return f
+}
+
+func flagsResult(ctx context.Context, f *flag.FlagSet, err error) error {
+	if errors.Is(err, flag.ErrHelp) {
+		language := i18n.FromContext(ctx)
+		f.VisitAll(func(option *flag.Flag) { option.Usage = language.Text(option.Usage) })
+		f.SetOutput(os.Stderr)
+		fmt.Fprint(os.Stderr, language.Format("Usage of %s:\n", f.Name()))
+		f.PrintDefaults()
+	} else if err != nil {
+		return i18n.Errorf("invalid command options: %w", err)
+	}
+	return err
+}
+
+func run(ctx context.Context, args []string) (err error) {
+	global := newFlags("hrelay")
 	root := global.String("root", os.Getenv("DELIVER_ROOT"), "team root containing 角色")
-	if err := global.Parse(args); err != nil {
+	choice := global.String("lang", "", "display language: auto, en or zh-TW")
+	parseErr := global.Parse(args)
+	language, err := i18n.Resolve(*choice, os.Getenv)
+	if err != nil {
+		return err
+	}
+	ctx = i18n.WithLanguage(ctx, language)
+	defer func() { err = i18n.LocalizeError(language, err) }()
+	if err := flagsResult(ctx, global, parseErr); err != nil {
 		return err
 	}
 	if global.NArg() < 1 {
-		return errors.New("usage: hrelay [--root PATH] version|cli|server|service|serve|send|status|show|resolve")
+		return i18n.NewError("usage: hrelay [--root PATH] version|cli|server|service|serve|send|status|show|resolve")
 	}
 	if global.NArg() == 1 && global.Arg(0) == "version" {
 		_, err := fmt.Fprintf(os.Stdout, "hrelay %s\n", version)
@@ -85,11 +115,11 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	command, rest := global.Arg(0), global.Args()[1:]
-	f := flag.NewFlagSet(command, flag.ContinueOnError)
+	f := newFlags(command)
 	switch command {
 	case "serve":
 		if len(rest) != 0 {
-			return errors.New("serve takes no arguments")
+			return i18n.NewError("serve takes no arguments")
 		}
 		return deliver.Serve(ctx, c, slog.Default())
 	case "send":
@@ -98,7 +128,7 @@ func run(ctx context.Context, args []string) error {
 		body := f.String("body", "", "exact message body")
 		key := f.String("key", "", "idempotency key; reuse for network retries")
 		ensure := f.Bool("ensure", false, "ensure a supervised relay is ready before enqueue")
-		if err := f.Parse(rest); err != nil {
+		if err := flagsResult(ctx, f, f.Parse(rest)); err != nil {
 			return err
 		}
 		specified := make(map[string]bool)
@@ -106,7 +136,7 @@ func run(ctx context.Context, args []string) error {
 		short := f.NArg() != 0
 		if short {
 			if f.NArg() != 2 || specified["to"] || specified["body"] {
-				return errors.New("usage: hrelay send [--from ROLE] [--key KEY] ROLE MESSAGE; do not mix positional and --to/--body forms")
+				return i18n.NewError("usage: hrelay send [--from ROLE] [--key KEY] ROLE MESSAGE; do not mix positional and --to/--body forms")
 			}
 			*to, *body = f.Arg(0), f.Arg(1)
 			if !specified["ensure"] {
@@ -119,7 +149,7 @@ func run(ctx context.Context, args []string) error {
 		request := deliver.SendRequest{Sender: *from, Recipient: *to, Body: *body, Key: *key}
 		if short || *ensure {
 			if *from == "" {
-				return errors.New("sender role is required: set HERDR_RELAY_FROM in the agent environment or pass --from; hrelay does not guess roles")
+				return i18n.NewError("sender role is required: set HERDR_RELAY_FROM in the agent environment or pass --from; hrelay does not guess roles")
 			}
 			if err := c.Validate(request); err != nil {
 				return err
@@ -131,28 +161,28 @@ func run(ctx context.Context, args []string) error {
 				return err
 			}
 			if err := manager.Ensure(ctx, c, false); err != nil {
-				return fmt.Errorf("relay startup failed; no message was enqueued: %w", err)
+				return i18n.Errorf("relay startup failed; no message was enqueued: %w", err)
 			}
 		}
 		err := call(ctx, c, "POST", "/v1/messages", request)
 		if err != nil {
-			return fmt.Errorf("send not confirmed; it may already be stored. Inspect status or retry identical content with --key %q: %w", *key, err)
+			return i18n.Errorf("send not confirmed; it may already be stored. Inspect status or retry identical content with --key %q: %w", *key, err)
 		}
 		return nil
 	case "status":
 		if len(rest) != 0 {
-			return errors.New("status takes no arguments")
+			return i18n.NewError("status takes no arguments")
 		}
 		return call(ctx, c, "GET", "/v1/status", nil)
 	case "show":
 		if len(rest) != 1 || strings.ContainsAny(rest[0], "/?#") {
-			return errors.New("show requires message or batch ID")
+			return i18n.NewError("show requires message or batch ID")
 		}
 		if strings.HasPrefix(rest[0], "batch-") {
 			return call(ctx, c, "GET", "/v1/batches/"+rest[0], nil)
 		}
 		if !strings.HasPrefix(rest[0], "msg-") {
-			return errors.New("show requires message or batch ID")
+			return i18n.NewError("show requires message or batch ID")
 		}
 		return call(ctx, c, "GET", "/v1/messages/"+rest[0], nil)
 	case "resolve":
@@ -160,15 +190,15 @@ func run(ctx context.Context, args []string) error {
 		action := f.String("action", "", "retry or submitted")
 		note := f.String("note", "", "inspection evidence")
 		confirm := f.Bool("confirm", false, "explicitly confirm inspection and resolution")
-		if err := f.Parse(rest); err != nil {
+		if err := flagsResult(ctx, f, f.Parse(rest)); err != nil {
 			return err
 		}
 		if f.NArg() != 0 || !strings.HasPrefix(*id, "batch-") || strings.ContainsAny(*id, "/?#") {
-			return errors.New("resolve requires --batch batch-ID")
+			return i18n.NewError("resolve requires --batch batch-ID")
 		}
 		return call(ctx, c, "POST", "/v1/batches/"+*id+"/resolve", map[string]any{"action": *action, "note": *note, "confirm": *confirm})
 	default:
-		return fmt.Errorf("unknown command %q", command)
+		return i18n.Errorf("unknown command %q", command)
 	}
 }
 
@@ -177,7 +207,7 @@ func main() {
 	syscall.Umask(0077)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if err := run(ctx, os.Args[1:]); err != nil {
+	if err := run(ctx, os.Args[1:]); err != nil && !errors.Is(err, flag.ErrHelp) {
 		fmt.Fprintln(os.Stderr, "hrelay:", err)
 		os.Exit(1)
 	}

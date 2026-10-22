@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 )
 
 type API struct {
@@ -142,7 +144,7 @@ func (a API) Handler() http.Handler {
 // Serve 使用私人 Unix socket，不開 TCP port；檔案鎖防止雙 worker 與重複復原。
 func Serve(ctx context.Context, c Config, logger *slog.Logger) error {
 	if len(c.Socket()) > 100 {
-		return errors.New("Unix socket path too long; set a shorter DELIVER_STATE_DIR")
+		return i18n.NewError("Unix socket path too long; set a shorter DELIVER_STATE_DIR")
 	}
 	if err := os.MkdirAll(c.StateDir, 0700); err != nil {
 		return err
@@ -152,14 +154,14 @@ func Serve(ctx context.Context, c Config, logger *slog.Logger) error {
 		return err
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("state directory must not be a symlink")
+		return i18n.NewError("state directory must not be a symlink")
 	}
 	if err = os.Chmod(c.StateDir, 0700); err != nil {
 		return err
 	}
 	lockPath := filepath.Join(c.StateDir, "daemon.lock")
 	if info, e := os.Lstat(lockPath); e == nil && !info.Mode().IsRegular() {
-		return errors.New("lock must be a regular file")
+		return i18n.NewError("lock must be a regular file")
 	}
 	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
@@ -167,17 +169,17 @@ func Serve(ctx context.Context, c Config, logger *slog.Logger) error {
 	}
 	defer lock.Close()
 	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return errors.New("daemon already running or state lock unavailable")
+		return i18n.NewError("daemon already running or state lock unavailable")
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 	if info, e := os.Lstat(c.Socket()); e == nil {
 		if info.Mode()&os.ModeSocket == 0 {
-			return errors.New("socket path exists and is not a socket")
+			return i18n.NewError("socket path exists and is not a socket")
 		}
 		probe, e := net.DialTimeout("unix", c.Socket(), time.Second)
 		if e == nil {
 			probe.Close()
-			return errors.New("socket already in use")
+			return i18n.NewError("socket already in use")
 		}
 		if err = os.Remove(c.Socket()); err != nil {
 			return err
@@ -198,7 +200,7 @@ func Serve(ctx context.Context, c Config, logger *slog.Logger) error {
 		return err
 	}
 	if boundRoot != c.Root {
-		return errors.New("state directory belongs to another project root")
+		return i18n.NewError("state directory belongs to another project root")
 	}
 	if err = s.Recover(ctx); err != nil {
 		return err

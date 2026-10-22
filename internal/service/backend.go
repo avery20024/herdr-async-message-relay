@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+
+	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 )
 
 func (m *Manager) label(r Record) string {
@@ -42,7 +44,7 @@ func (m *Manager) render(r Record) (string, []byte, error) {
 	}
 	for _, value := range values {
 		if strings.ContainsFunc(value, func(r rune) bool { return r < 32 || r == 127 }) {
-			return "", nil, errors.New("service paths and environment must not contain control characters")
+			return "", nil, i18n.NewError("service paths and environment must not contain control characters")
 		}
 	}
 	names := make([]string, 0, len(r.Environment))
@@ -70,7 +72,7 @@ func (m *Manager) render(r Record) (string, []byte, error) {
 		return filepath.Join(m.Home, "Library", "LaunchAgents", m.label(r)+".plist"), []byte(out.String()), nil
 	}
 	if m.Platform != "linux" {
-		return "", nil, errors.New("unsupported service manager")
+		return "", nil, i18n.NewError("unsupported service manager")
 	}
 	out.WriteString("[Unit]\nDescription=Herdr Async Message Relay\n\n[Service]\nType=simple\n")
 	out.WriteString("ExecStart=")
@@ -90,7 +92,7 @@ func (m *Manager) render(r Record) (string, []byte, error) {
 		config = filepath.Join(m.Home, ".config")
 	}
 	if !filepath.IsAbs(config) {
-		return "", nil, errors.New("XDG_CONFIG_HOME must be absolute for user service installation")
+		return "", nil, i18n.NewError("XDG_CONFIG_HOME must be absolute for user service installation")
 	}
 	return filepath.Join(config, "systemd", "user", m.label(r)), []byte(out.String()), nil
 }
@@ -135,7 +137,7 @@ func (m *Manager) enable(ctx context.Context, r Record) error {
 		_, err := m.run(ctx, "systemctl", "--user", "enable", m.label(r))
 		return err
 	}
-	return errors.New("unsupported service manager")
+	return i18n.NewError("unsupported service manager")
 }
 
 func (m *Manager) stop(ctx context.Context, r Record) error {
@@ -156,5 +158,5 @@ func (m *Manager) stop(ctx context.Context, r Record) error {
 		_, err := m.run(ctx, "systemctl", "--user", "disable", "--now", m.label(r))
 		return err
 	}
-	return errors.New("unsupported service manager")
+	return i18n.NewError("unsupported service manager")
 }

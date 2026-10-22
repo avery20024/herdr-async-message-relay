@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 )
 
 var rolePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
@@ -31,7 +33,7 @@ func EnvInt(name string, fallback, min, max int) (int, error) {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n < min || n > max {
-		return 0, fmt.Errorf("%s must be %d..%d", name, min, max)
+		return 0, i18n.Errorf("%s must be %d..%d", name, min, max)
 	}
 	return n, nil
 }
@@ -53,7 +55,7 @@ func LoadConfig(root string) (c Config, err error) {
 	}
 	info, e := os.Stat(filepath.Join(c.Root, "角色"))
 	if e != nil || !info.IsDir() {
-		err = fmt.Errorf("root must contain 角色 directory: %s", c.Root)
+		err = i18n.Errorf("root must contain 角色 directory: %s", c.Root)
 		return
 	}
 	base := os.Getenv("XDG_STATE_HOME")
@@ -100,21 +102,21 @@ func (c Config) Socket() string { return filepath.Join(c.StateDir, "deliver.sock
 func (c Config) Validate(r SendRequest) error {
 	for _, role := range []string{r.Sender, r.Recipient} {
 		if len(role) > 64 || !rolePattern.MatchString(role) {
-			return fmt.Errorf("invalid role: %q", role)
+			return i18n.Errorf("invalid role: %q", role)
 		}
 		info, err := os.Stat(filepath.Join(c.Root, "角色", role))
 		if err != nil || !info.IsDir() {
-			return fmt.Errorf("role directory missing: %s", role)
+			return i18n.Errorf("role directory missing: %s", role)
 		}
 	}
 	if len(r.Key) < 1 || len(r.Key) > 200 {
-		return fmt.Errorf("idempotency_key must be 1..200 bytes")
+		return i18n.NewError("idempotency_key must be 1..200 bytes")
 	}
 	if !utf8.ValidString(r.Body) || strings.ContainsRune(r.Body, '\x00') {
-		return fmt.Errorf("body must be UTF-8 without NUL bytes")
+		return i18n.NewError("body must be UTF-8 without NUL bytes")
 	}
 	if len(r.Body) == 0 || len(r.Body) > c.BatchBytes-1024 {
-		return fmt.Errorf("body must be 1..%d bytes", c.BatchBytes-1024)
+		return i18n.Errorf("body must be 1..%d bytes", c.BatchBytes-1024)
 	}
 	return nil
 }

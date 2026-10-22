@@ -146,7 +146,7 @@ func TestBatchThreeFIFOAndStateFence(t *testing.T) {
 		t.Fatal(h.count())
 	}
 	text := h.prompts[0]
-	if !strings.Contains(text, "積壓訊息一次通知") || !strings.Contains(text, "語境可能不同") || !strings.Contains(text, "共 3 則") {
+	if !strings.Contains(text, "[hrelay | batch ") || !strings.Contains(text, "keep contexts separate") || !strings.Contains(text, "| 3 messages]") {
 		t.Fatal(text)
 	}
 	for i := 1; i <= 3; i++ {
@@ -167,7 +167,7 @@ func TestBatchThreeFIFOAndStateFence(t *testing.T) {
 	if err := w.Dispatch(ctx, "gm", a); err != nil {
 		t.Fatal(err)
 	}
-	if h.count() != 2 || !strings.Contains(h.prompts[1], "共 2 則") || !strings.Contains(h.prompts[1], "body-4") {
+	if h.count() != 2 || !strings.Contains(h.prompts[1], "| 2 messages]") || !strings.Contains(h.prompts[1], "body-4") {
 		t.Fatal(h.prompts)
 	}
 }
@@ -185,7 +185,7 @@ func TestConfigurableBatchAndByteLimit(t *testing.T) {
 			if err := w.Dispatch(context.Background(), "gm", seat(c, "gm", "done", "wA:pB", 1)); err != nil {
 				t.Fatal(err)
 			}
-			if strings.Count(h.prompts[0], " 開始｜ID ") != size {
+			if strings.Count(h.prompts[0], "\n--- message ") != size {
 				t.Fatal(h.prompts)
 			}
 		})
@@ -201,7 +201,7 @@ func TestConfigurableBatchAndByteLimit(t *testing.T) {
 		if err := w.Dispatch(context.Background(), "gm", seat(c, "gm", "idle", "wC:p5", 1)); err != nil {
 			t.Fatal(err)
 		}
-		if len(h.prompts[0]) > 2048 || strings.Count(h.prompts[0], " 開始｜ID ") != 1 {
+		if len(h.prompts[0]) > 2048 || strings.Count(h.prompts[0], "\n--- message ") != 1 {
 			t.Fatal(len(h.prompts[0]))
 		}
 	})

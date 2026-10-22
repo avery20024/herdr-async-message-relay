@@ -77,6 +77,18 @@ hrelay --root /absolute/path/to/team send --ensure \
 
 `send ROLE MESSAGE` ensures readiness by default; an operator managing a manual foreground daemon can explicitly use `send --ensure=false ROLE MESSAGE`. A missing sender or invalid request fails before service registration.
 
+## Display language (v0.3.0+)
+
+Starting with v0.3.0, the launcher may also set `HERDR_RELAY_LANG=en` or `HERDR_RELAY_LANG=zh-TW` for human-facing native CLI diagnostics/help. A one-off global override precedes the command:
+
+```sh
+hrelay --lang en --root /absolute/path/to/team send --from dev gm 'Original report'
+```
+
+Priority: `--lang` → `HERDR_RELAY_LANG` → first non-empty `LC_ALL`, `LC_MESSAGES`, `LANG`. `auto` selects the locale path explicitly; unsupported automatic locales fall back to English, while unsupported explicit choices fail. This is per invocation, not a persisted worker setting; another terminal's exports do not change existing agents.
+
+Keep send/status/service/install JSON unchanged. Original bodies are never translated, and the AI batch header, independence/authorization reminder, and message boundaries are always concise English. OS/Herdr/Go errors and raw API error evidence remain verbatim; an English preference does not translate a separately copied wrapper's own diagnostics. Do not restart a service merely to switch CLI language. Deploying the new envelope does require a worker running the updated binary, using the normal operator-controlled upgrade process.
+
 ## Optional agent skill
 
 This repository includes [`skills/hrelay/SKILL.md`](../skills/hrelay/SKILL.md). Link that directory into the harness's supported skill directory if desired; install does not silently edit Claude, Pi, or other harness configurations. Because managed plugin roots can move, check/update such links after a plugin source/location change. The stable native command does not depend on the skill link or checkout path.
