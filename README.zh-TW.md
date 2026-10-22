@@ -38,11 +38,19 @@ hrelay send gm '報告已備妥，請查核證據並決定下一步。'
 
 ### 透過 Herdr plugin 安裝
 
-安裝固定版本：
+一般安裝不必指定版本：
+
+```sh
+herdr plugin install avery20024/herdr-async-message-relay
+```
+
+省略 `--ref` 即採 Herdr 的預設來源。只有需要固定版本、回退或可重現安裝時才指定，例如：
 
 ```sh
 herdr plugin install avery20024/herdr-async-message-relay --ref v0.3.0
 ```
+
+Herdr 更新會沿用安裝時記錄的 ref。若既有安裝已鎖定 tag，請不帶 `--ref` 重新安裝以改用預設來源；只執行 `herdr plugin update` 仍會沿用原本的 tag。
 
 manifest 的安裝階段 `build` 指令會下載對應的**預編譯執行檔**，不會執行 Go compiler。安裝器辨識平台、下載 `VERSION` 指定版本、核對 SHA-256 與執行檔內嵌版本，再以原子替換安裝 `bin/hrelay`。同一原生執行檔會在 `$HOME/.local/bin/hrelay` 建立獨立副本，也可用絕對路徑 `HERDR_RELAY_BIN_DIR` 指定位置。安裝以 ownership hash 與 lock 保護，拒絕覆寫其他來源或已修改的檔案；不是指向 managed checkout 的 symlink，也不是 shell shim。
 
@@ -55,14 +63,27 @@ Herdr 不會修改 agent 的 PATH。只有該 agent 的 PATH 已選到安裝目�
 ```sh
 git clone https://github.com/avery20024/herdr-async-message-relay.git
 cd herdr-async-message-relay
-git checkout v0.3.0
 sh scripts/install-binary.sh
 ./bin/hrelay version
 ```
 
+只有需要特定版本時，才在執行安裝器前加上 `git checkout <tag>`。未切換版本時，安裝器依 clone 所取得的 `VERSION` 下載對應成品，不會另外查詢 GitHub latest Release。
+
 也可從 [Releases](https://github.com/avery20024/herdr-async-message-relay/releases) 下載平台 archive、核對 `checksums.txt` 後解壓。每份 archive 包含 `hrelay`、英文 README、MIT 授權與第三方授權聲明；重新散布時請一併保留授權聲明。
 
 checksum 可偵測損毀或與下載清單不符的成品，但無法防禦發布帳號遭入侵、同時替換成品與 checksum 的情況。下載需要 HTTPS 與可連線的 GitHub Release；不會悄悄改為本機編譯。
+
+## 指令總覽（尚未發布）
+
+新增的總覽是開發中功能，**已發布的 v0.3.0 執行檔尚不包含此功能**：
+
+```sh
+hrelay help
+hrelay --help
+hrelay --lang zh-TW help
+```
+
+內容涵蓋送信、查詢、服務管理、CLI 安裝、Herdr 插件 actions、環境設定與安全提醒。`help` 輸出至 stdout；根層 `--help` 輸出至 stderr 並列出全域選項。兩者不要求有效專案、執行中的 relay 或 Herdr socket，也不啟動服務或建立佇列。全域 `--root`／`--lang` 放在子指令前；根目錄依 `--root` → `DELIVER_ROOT` → 當前目錄選擇，不會向上搜尋。
 
 ## 執行
 

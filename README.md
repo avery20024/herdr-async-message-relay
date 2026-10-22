@@ -38,11 +38,19 @@ Starting with v0.2.0, `service start` / `send --ensure` can register and start a
 
 ### As a Herdr plugin
 
-Install the pinned release:
+Install without pinning a version:
+
+```sh
+herdr plugin install avery20024/herdr-async-message-relay
+```
+
+Omit `--ref` for normal installs to use Herdr's default source. Only specify it when you need a fixed version, rollback, or reproducible setup, for example:
 
 ```sh
 herdr plugin install avery20024/herdr-async-message-relay --ref v0.3.0
 ```
+
+Herdr updates follow the ref recorded at installation. If an existing installation is pinned to a tag, reinstall without `--ref` to switch to the default source; `herdr plugin update` alone keeps following that recorded tag.
 
 The manifest's install-time `build` command downloads the matching **precompiled** executable; it does not run the Go compiler. It detects the OS/architecture, downloads the version pinned in `VERSION`, verifies its SHA-256 checksum and embedded version, and atomically installs `bin/hrelay`. The same native binary installs an independent executable copy at `$HOME/.local/bin/hrelay` (or absolute `HERDR_RELAY_BIN_DIR`), protected by an ownership hash and lock. It refuses to overwrite foreign or modified entries; no symlink to the managed checkout or shell shim is used.
 
@@ -55,14 +63,27 @@ Herdr does not modify agent PATH. The stable command is immediately usable only 
 ```sh
 git clone https://github.com/avery20024/herdr-async-message-relay.git
 cd herdr-async-message-relay
-git checkout v0.3.0
 sh scripts/install-binary.sh
 ./bin/hrelay version
 ```
 
+Only run `git checkout <tag>` before the installer when you need a particular version. Without a checkout override, the installer uses the cloned source's `VERSION`, not a separate GitHub latest-release lookup.
+
 Alternatively, download the archive for your platform from [Releases](https://github.com/avery20024/herdr-async-message-relay/releases), verify `checksums.txt`, and extract it. Each archive contains `hrelay`, this README, the MIT license, and third-party license notices. Keep the notices with the executable when redistributing.
 
 Checksum verification detects corruption or a mismatch against the downloaded manifest; it does not protect against a compromised publisher or compromised Release containing both replacement assets and checksums. Downloads require HTTPS and a reachable GitHub Release. There is no silent source-build fallback.
+
+## Command overview (unreleased)
+
+The new overview is a development feature and is **not included in the published v0.3.0 binary**:
+
+```sh
+hrelay help
+hrelay --help
+hrelay --lang zh-TW help
+```
+
+It lists messaging, inspection, service controls, CLI installation, Herdr plugin actions, context settings, and safety reminders. `help` writes to stdout; root-level `--help` writes to stderr and also lists global flags. Neither requires a valid project, a running relay, or a Herdr socket, and neither starts services or creates a queue. Put global `--root` / `--lang` before the subcommand. The root is selected by `--root` → `DELIVER_ROOT` → current directory; hrelay does not search parent directories.
 
 ## Run
 

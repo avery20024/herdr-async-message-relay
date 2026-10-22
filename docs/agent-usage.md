@@ -10,6 +10,25 @@ This calls the installed plugin's native executable directly. There is no projec
 
 The recipient role is a caller-selected stable key, not a pane address. Current routing uses `<team-root>/角色/<role>`; a general role registry is not part of this release. The worker, not the calling agent, resolves the current pane and waits for eligibility.
 
+## Built-in command overview (unreleased)
+
+The development build adds `hrelay help`; the published v0.3.0 binary does not yet contain this overview. Root-level `hrelay --help` also shows it, followed by global flags. Choose the display language before the command:
+
+```sh
+hrelay help
+hrelay --lang zh-TW help
+```
+
+The overview explains native commands and Herdr plugin action IDs without requiring project configuration or contacting a service. It does not create queues or start workers. `help` writes to stdout; root-level `--help` writes to stderr. `help COMMAND` is not supported.
+
+Normal installation does not need a pinned tag:
+
+```sh
+herdr plugin install avery20024/herdr-async-message-relay
+```
+
+Use `--ref` only for a deliberately fixed revision. The installer still verifies the Release selected by the source checkout's `VERSION`; omitting `--ref` does not disable checksum or embedded-version checks.
+
 ## One-time CLI setup
 
 From v0.2.0, the plugin's binary installer also installs a **regular native executable copy** at `$HOME/.local/bin/hrelay`. Herdr itself does not modify PATH. The copy survives managed-checkout cleanup and is updated by later installs. It is not a shell shim or a symlink back to the plugin directory.

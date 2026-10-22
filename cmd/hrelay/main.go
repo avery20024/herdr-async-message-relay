@@ -91,11 +91,22 @@ func run(ctx context.Context, args []string) (err error) {
 	}
 	ctx = i18n.WithLanguage(ctx, language)
 	defer func() { err = i18n.LocalizeError(language, err) }()
+	if errors.Is(parseErr, flag.ErrHelp) {
+		if err := printHelp(os.Stderr, language); err != nil {
+			return err
+		}
+	}
 	if err := flagsResult(ctx, global, parseErr); err != nil {
 		return err
 	}
 	if global.NArg() < 1 {
-		return i18n.NewError("usage: hrelay [--root PATH] version|cli|server|service|serve|send|status|show|resolve")
+		return i18n.NewError("usage: hrelay [--lang auto|en|zh-TW] [--root PATH] help|version|cli|server|service|serve|send|status|show|resolve")
+	}
+	if global.Arg(0) == "help" {
+		if global.NArg() != 1 {
+			return i18n.NewError("usage: hrelay help; no additional arguments")
+		}
+		return printHelp(os.Stdout, language)
 	}
 	if global.NArg() == 1 && global.Arg(0) == "version" {
 		_, err := fmt.Fprintf(os.Stdout, "hrelay %s\n", version)
