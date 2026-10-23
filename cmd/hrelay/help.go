@@ -13,7 +13,7 @@ type helpEntry struct {
 }
 
 var helpCommands = []helpEntry{
-	{"help", "Show this overview; no project or service required."},
+	{"help [COMMAND [SUBCOMMAND]]", "Show overview or detailed help; no project or service required."},
 	{"version", "Show the native CLI version."},
 	{"send [--from ROLE] [--key KEY] ROLE MESSAGE", "Queue an original message; ensure service readiness by default."},
 	{"status", "Show queue and batch status."},
@@ -22,6 +22,8 @@ var helpCommands = []helpEntry{
 	{"service ensure|start|stop|restart|status|restore|list", "Advanced service controls; restore unpaused registrations or list services."},
 	{"cli install [--bin-dir ABSOLUTE_PATH]", "Install or repair the stable native CLI."},
 	{"serve", "Run the relay in the foreground."},
+	{"claude-guard --role ROLE enable|disable|status", "Experimental: configure or inspect a role's Claude question guard."},
+	{"claude-hook --role ROLE [--pane ID]", "Experimental: read a Claude hook event from stdin; no service startup."},
 	{"resolve --batch ID --action retry|submitted", "Resolve an uncertain batch only after inspection; requires --note and --confirm."},
 }
 
@@ -33,6 +35,7 @@ var helpActions = []helpEntry{
 }
 
 var helpNotes = []string{
+	"Detailed help: hrelay help COMMAND [SUBCOMMAND] or COMMAND [SUBCOMMAND] --help.",
 	"Global --root and --lang precede the command; send flags precede ROLE MESSAGE.",
 	"Root: --root PATH > DELIVER_ROOT > current directory; no upward search.",
 	"Sender: --from ROLE or HERDR_RELAY_FROM; hrelay never guesses a role.",

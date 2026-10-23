@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/avery20024/herdr-async-message-relay/internal/claudeguard"
 	"github.com/avery20024/herdr-async-message-relay/internal/sqlc"
 )
 
@@ -40,6 +42,29 @@ type Worker struct {
 func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 	if a.Status != "idle" && a.Status != "done" {
 		return nil
+	}
+	guardCtx, cancel := context.WithTimeout(ctx, time.Second)
+	session := ""
+	if a.Session.Agent == "claude" && a.Session.Kind == "id" {
+		session = a.Session.Value
+	}
+	release, enabled, err := (claudeguard.Manager{Dir: filepath.Join(w.Config.StateDir, "claude-guard")}).Acquire(guardCtx, role, a.Pane, session)
+	cancel()
+	if err != nil {
+		w.Log.Debug("Claude guard deferred", "role", role, "error", err)
+		return nil
+	}
+	defer release()
+	if enabled {
+		// 鎖內重新查核身分與狀態，避免沿用排程時的舊快照。
+		agents, err := w.Herdr.List(ctx)
+		if err != nil {
+			return err
+		}
+		current, err := ResolveAgent(w.Config.Root, role, agents)
+		if err != nil || a.Seq == nil || current.Pane != a.Pane || current.Session != a.Session || *current.Seq != *a.Seq || (current.Status != "idle" && current.Status != "done") {
+			return nil
+		}
 	}
 	last, err := w.Store.Q.LatestBatch(ctx, role)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {

@@ -10,16 +10,16 @@ This calls the installed plugin's native executable directly. There is no projec
 
 The recipient role is a caller-selected stable key, not a pane address. Current routing uses `<team-root>/角色/<role>`; a general role registry is not part of this release. The worker, not the calling agent, resolves the current pane and waits for eligibility.
 
-## Built-in command overview (unreleased)
+## Built-in command overview (v0.4.0+)
 
-The development build adds `hrelay help`; the published v0.3.0 binary does not yet contain this overview. Root-level `hrelay --help` also shows it, followed by global flags. Choose the display language before the command:
+Version v0.4.0 introduces `hrelay help`; older binaries do not contain this overview. Root-level `hrelay --help` also shows it, followed by global flags. Choose the display language before the command:
 
 ```sh
 hrelay help
 hrelay --lang zh-TW help
 ```
 
-The overview explains native commands and Herdr plugin action IDs without requiring project configuration or contacting a service. It does not create queues or start workers. `help` writes to stdout; root-level `--help` writes to stderr. `help COMMAND` is not supported.
+The overview explains native commands and Herdr plugin action IDs without requiring project configuration or contacting a service. It does not create queues or start workers. `help` writes to stdout; root-level `--help` writes to stderr.
 
 Normal installation does not need a pinned tag:
 

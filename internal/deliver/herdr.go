@@ -12,11 +12,18 @@ import (
 	"time"
 )
 
+type AgentSession struct {
+	Agent string `json:"agent"`
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+}
+
 type Agent struct {
-	CWD    string `json:"cwd"`
-	Pane   string `json:"pane_id"`
-	Status string `json:"agent_status"`
-	Seq    *int64 `json:"state_change_seq"`
+	Session AgentSession `json:"agent_session"`
+	CWD     string       `json:"cwd"`
+	Pane    string       `json:"pane_id"`
+	Status  string       `json:"agent_status"`
+	Seq     *int64       `json:"state_change_seq"`
 }
 
 type Herdr interface {
