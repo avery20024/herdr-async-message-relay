@@ -1,6 +1,17 @@
 package i18n
 
 var zhTW = map[string]string{
+	"Browse message history in a read-only terminal UI.": "以唯讀終端介面瀏覽訊息歷史。",
+	"ui takes no arguments":                              "ui 不接受參數",
+	"ui requires an interactive terminal":                "ui 需要互動式終端",
+	"Read-only history over the existing relay socket; never starts a service or writes to the queue.":         "透過既有 relay socket 唯讀瀏覽歷史；不啟動服務或寫入佇列。",
+	"Manual refresh by default: r refreshes; Ctrl+W toggles one-second auto refresh.":                          "預設手動刷新：r 更新；Ctrl+W 開關每秒自動刷新。",
+	"j/k or arrows select; u/d move the list by half a page; U/D page the message body.":                       "j/k 或方向鍵選列；u/d 翻列表半頁；U/D 翻訊息本文。",
+	"[ and ] page metadata up/down; list, body and metadata keys never switch focus.":                          "[／] 向上／下翻資料整頁；列表、本文與資料按鍵不切換焦點。",
+	"Layout: list above; metadata bottom-left and message body bottom-right; no focus switching.":              "上半部列表，左下資料、右下訊息本文；不切換焦點。",
+	"Ctrl+P opens filters; Enter applies and Esc cancels.":                                                     "Ctrl+P 開篩選，Enter 套用、Esc 取消。",
+	"q or Ctrl+C exits the UI, not the relay. An interactive terminal and UI-capable worker are required.":     "q 或 Ctrl+C 離開 UI，不停止 relay。需要互動式終端與支援 UI 的 worker。",
+	"Times use Asia/Taipei. Submission is not a read receipt; missing delivery evidence is shown as a dash.":   "時間採 Asia/Taipei。提交不是已讀回執；缺乏投遞證據時顯示破折號。",
 	"Experimental opt-in guard; --role is required and must name an existing role directory.":                  "實驗性、明確啟用的閘門；--role 必填，且必須對應既有角色目錄。",
 	"enable preserves pending state; a new binding requires SessionStart. disable restores Herdr-only gating.": "enable 保留未完成問答；新綁定需要 SessionStart。disable 恢復僅依 Herdr 判斷。",
 	"status reads policy and state; malformed policies fail closed. No service is started.":                    "status 讀取政策與狀態；政策損毀時保守阻擋。不啟動服務。",

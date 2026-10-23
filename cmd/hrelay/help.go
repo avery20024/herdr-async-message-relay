@@ -17,6 +17,7 @@ var helpCommands = []helpEntry{
 	{"version", "Show the native CLI version."},
 	{"send [--from ROLE] [--key KEY] ROLE MESSAGE", "Queue an original message; ensure service readiness by default."},
 	{"status", "Show queue and batch status."},
+	{"ui", "Browse message history in a read-only terminal UI."},
 	{"show msg-ID|batch-ID", "Inspect one stored message or batch."},
 	{"server on|off|restart|status", "Resume/start, pause/stop, restart, or inspect this project's relay."},
 	{"service ensure|start|stop|restart|status|restore|list", "Advanced service controls; restore unpaused registrations or list services."},

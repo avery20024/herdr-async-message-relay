@@ -99,6 +99,15 @@ Help recognition follows the normal flag parser: options precede positional argu
 
 It lists messaging, inspection, service controls, CLI installation, Herdr plugin actions, context settings, and safety reminders. `help` writes to stdout; root-level `--help` writes to stderr and also lists global flags. Neither requires a valid project, a running relay, or a Herdr socket, and neither starts services or creates a queue. Put global `--root` / `--lang` before the subcommand. The root is selected by `--root` → `DELIVER_ROOT` → current directory; hrelay does not search parent directories.
 
+## Message history UI (development)
+
+The development checkout adds `hrelay ui`, a read-only Bubble Tea interface with full-history cursor pagination, sender/recipient/state filters, message details and manual or one-second automatic refresh. It is **not included in released v0.4.0 binaries**; both the CLI and running worker need the new history API. The UI never starts or upgrades a worker. See [controls, data semantics and limitations](docs/ui.md).
+
+```sh
+hrelay --root /absolute/team ui
+hrelay help ui
+```
+
 ## Run
 
 Use an existing team root with role directories, or create a test layout:

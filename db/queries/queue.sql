@@ -72,3 +72,19 @@ UPDATE messages SET state = 'submitted' WHERE batch_id = ? AND state = 'uncertai
 
 -- name: ResolveMessagesRetry :exec
 UPDATE messages SET state = 'queued', batch_id = NULL WHERE batch_id = ? AND state = 'uncertain';
+
+-- name: BrowseMessages :many
+SELECT messages.*, batches.state AS batch_state,
+       batches.updated_at AS batch_updated_at, batches.detail AS batch_detail
+FROM messages LEFT JOIN batches ON batches.id = messages.batch_id
+WHERE (sqlc.arg(before_seq) = 0 OR messages.seq < sqlc.arg(before_seq))
+  AND (sqlc.arg(sender_filter) = '' OR messages.sender = sqlc.arg(sender_filter))
+  AND (sqlc.arg(recipient_filter) = '' OR messages.recipient = sqlc.arg(recipient_filter))
+  AND (sqlc.arg(state_filter) = '' OR messages.state = sqlc.arg(state_filter))
+ORDER BY messages.seq DESC LIMIT sqlc.arg(page_limit);
+
+-- name: HistoricalSenders :many
+SELECT DISTINCT sender FROM messages ORDER BY sender;
+
+-- name: HistoricalRecipients :many
+SELECT DISTINCT recipient FROM messages ORDER BY recipient;

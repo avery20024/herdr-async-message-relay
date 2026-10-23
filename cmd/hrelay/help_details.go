@@ -73,6 +73,20 @@ func buildCommandHelpTopics() map[string]commandHelp {
 			},
 			examples: []string{"hrelay --root /absolute/team send --from dev --key report-1 gm 'Report ready.'", "hrelay --root /absolute/team send --from dev --ensure=false --to gm --body 'Report ready.'"},
 		},
+		"ui": {
+			syntax: "ui",
+			notes: []string{
+				"Read-only history over the existing relay socket; never starts a service or writes to the queue.",
+				"Manual refresh by default: r refreshes; Ctrl+W toggles one-second auto refresh.",
+				"j/k or arrows select; u/d move the list by half a page; U/D page the message body.",
+				"[ and ] page metadata up/down; list, body and metadata keys never switch focus.",
+				"Layout: list above; metadata bottom-left and message body bottom-right; no focus switching.",
+				"Ctrl+P opens filters; Enter applies and Esc cancels.",
+				"q or Ctrl+C exits the UI, not the relay. An interactive terminal and UI-capable worker are required.",
+				"Times use Asia/Taipei. Submission is not a read receipt; missing delivery evidence is shown as a dash.",
+			},
+			examples: []string{"hrelay --root /absolute/team ui", "hrelay --lang zh-TW --root /absolute/team ui"},
+		},
 		"status": {
 			syntax:   "status",
 			notes:    []string{"Reads queue status from the existing relay; does not automatically start a service.", "accepted = durably stored; submitted is not a read or task-acceptance receipt."},
