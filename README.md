@@ -47,7 +47,7 @@ herdr plugin install avery20024/herdr-async-message-relay
 Omit `--ref` for normal installs to use Herdr's default source. Only specify it when you need a fixed version, rollback, or reproducible setup, for example:
 
 ```sh
-herdr plugin install avery20024/herdr-async-message-relay --ref v0.3.0
+herdr plugin install avery20024/herdr-async-message-relay --ref v0.4.0
 ```
 
 Herdr updates follow the ref recorded at installation. If an existing installation is pinned to a tag, reinstall without `--ref` to switch to the default source; `herdr plugin update` alone keeps following that recorded tag.
@@ -73,15 +73,29 @@ Alternatively, download the archive for your platform from [Releases](https://gi
 
 Checksum verification detects corruption or a mismatch against the downloaded manifest; it does not protect against a compromised publisher or compromised Release containing both replacement assets and checksums. Downloads require HTTPS and a reachable GitHub Release. There is no silent source-build fallback.
 
-## Command overview (unreleased)
+## Experimental Claude question guard (v0.4.0)
 
-The new overview is a development feature and is **not included in the published v0.3.0 binary**:
+Version v0.4.0 introduces opt-in, per-recipient-role `claude-guard` and `claude-hook` commands. Synchronous Claude Code AskUserQuestion hooks provide an additional delivery gate independent of screen wrapping. Pending, unknown, missing or mismatched session/pane state keeps messages queued before a batch is claimed. No hooks, Claude settings, service changes or upgrades are installed automatically.
+
+This is an experimental feature, not a native current-state API or a guarantee against all races. A real Claude Code v2.1.308 / Herdr 0.9.3 test confirmed question tracking and delivery after a human answer; Herdr reported blocked throughout the open question, so the idle-misclassification case was not reproduced. Cancellation, interruption and native lock-contention paths remain unvalidated. The test notification was visible after the answer, but Claude declined its requested acknowledgement, so transport delivery is not proof of content handling. Missing/disabled/timed-out hooks can defeat the assumption; cancellation may leave a pending record requiring inspection. See [setup, recovery and limitations](docs/claude-question-guard.md) and the optional [settings example](examples/claude-question-guard.settings.json). Binaries older than v0.4.0 do not include this feature.
+
+## Command overview (v0.4.0)
+
+The overview is new in v0.4.0 and is **not included in v0.3.0 binaries**:
 
 ```sh
 hrelay help
 hrelay --help
 hrelay --lang zh-TW help
+hrelay help send
+hrelay send --help
+hrelay --lang zh-TW help service restart
+hrelay cli install --help
 ```
+
+Detailed topics cover every command and the `server`, `service`, and `cli` subcommands, including options, defaults, examples, and safety notes. `hrelay help COMMAND [SUBCOMMAND]` writes to stdout; `hrelay COMMAND [SUBCOMMAND] --help` (or `-h`) writes the same documentation to stderr and exits successfully. Unknown topics fail without loading configuration. All help works with an absent project, invalid worker settings, or no Herdr/service-manager tools, and never installs the CLI or touches a queue. Ordinary service inspection is different: `service status`/`list` may create service-manager bookkeeping.
+
+Help recognition follows the normal flag parser: options precede positional arguments; `--help` used as a string option value or as message data is not intercepted. Global `--lang` / `--root` must still precede the command. For example, `send --to gm --body '--help'` remains a send request, not a help request. The short send form defaults `--ensure` to true; the `--to`/`--body` form defaults it to false. Detailed help documents this difference without starting a service.
 
 It lists messaging, inspection, service controls, CLI installation, Herdr plugin actions, context settings, and safety reminders. `help` writes to stdout; root-level `--help` writes to stderr and also lists global flags. Neither requires a valid project, a running relay, or a Herdr socket, and neither starts services or creates a queue. Put global `--root` / `--lang` before the subcommand. The root is selected by `--root` → `DELIVER_ROOT` → current directory; hrelay does not search parent directories.
 

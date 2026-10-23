@@ -83,10 +83,10 @@ func TestOverviewBeforeProjectAndServiceSetup(t *testing.T) {
 	}
 }
 
-func TestHelpRejectsExtraArgumentsBeforeConfig(t *testing.T) {
+func TestHelpRejectsUnknownTopicsBeforeConfig(t *testing.T) {
 	t.Setenv("DELIVER_ROOT", filepath.Join(t.TempDir(), "missing"))
 	for _, language := range []string{"en", "zh-TW"} {
-		for _, extra := range []string{"send", "--help", "unexpected"} {
+		for _, extra := range []string{"unexpected", "send unexpected", "service unknown", "server unknown", "cli unknown"} {
 			err := run(context.Background(), []string{"--lang", language, "help", extra})
 			want := "usage: hrelay help"
 			if language == "zh-TW" {

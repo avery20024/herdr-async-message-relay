@@ -102,11 +102,8 @@ func run(ctx context.Context, args []string) (err error) {
 	if global.NArg() < 1 {
 		return i18n.NewError("usage: hrelay [--lang auto|en|zh-TW] [--root PATH] help|version|cli|server|service|serve|send|status|show|resolve")
 	}
-	if global.Arg(0) == "help" {
-		if global.NArg() != 1 {
-			return i18n.NewError("usage: hrelay help; no additional arguments")
-		}
-		return printHelp(os.Stdout, language)
+	if handled, helpErr := dispatchHelp(global.Args(), language); handled {
+		return helpErr
 	}
 	if global.NArg() == 1 && global.Arg(0) == "version" {
 		_, err := fmt.Fprintf(os.Stdout, "hrelay %s\n", version)
@@ -120,6 +117,15 @@ func run(ctx context.Context, args []string) (err error) {
 	}
 	if global.Arg(0) == "service" {
 		return runService(ctx, *root, global.Args()[1:])
+	}
+	if global.Arg(0) == "claude-hook" {
+		if err := runClaudeGuard(ctx, *root, global.Args()[1:], true); err != nil {
+			return claudeHookError{err}
+		}
+		return nil
+	}
+	if global.Arg(0) == "claude-guard" {
+		return runClaudeGuard(ctx, *root, global.Args()[1:], false)
 	}
 	c, err := deliver.LoadConfig(*root)
 	if err != nil {
@@ -220,6 +226,10 @@ func main() {
 	defer cancel()
 	if err := run(ctx, os.Args[1:]); err != nil && !errors.Is(err, flag.ErrHelp) {
 		fmt.Fprintln(os.Stderr, "hrelay:", err)
+		var hookErr claudeHookError
+		if errors.As(err, &hookErr) {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 }

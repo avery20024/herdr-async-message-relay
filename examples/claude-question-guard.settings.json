@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "( exec \"${HRELAY_GUARD_BIN:?}\" --root \"${DELIVER_ROOT:?}\" claude-hook --role \"${HERDR_RELAY_FROM:?}\" --pane \"${HERDR_PANE_ID:?}\" ) || exit 2", "timeout": 10 }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "( exec \"${HRELAY_GUARD_BIN:?}\" --root \"${DELIVER_ROOT:?}\" claude-hook --role \"${HERDR_RELAY_FROM:?}\" --pane \"${HERDR_PANE_ID:?}\" ) || exit 2", "timeout": 10 }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "( exec \"${HRELAY_GUARD_BIN:?}\" --root \"${DELIVER_ROOT:?}\" claude-hook --role \"${HERDR_RELAY_FROM:?}\" --pane \"${HERDR_PANE_ID:?}\" ) || exit 2", "timeout": 10 }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "( exec \"${HRELAY_GUARD_BIN:?}\" --root \"${DELIVER_ROOT:?}\" claude-hook --role \"${HERDR_RELAY_FROM:?}\" --pane \"${HERDR_PANE_ID:?}\" ) || exit 2", "timeout": 10 }] }
+    ],
+    "PostToolUseFailure": [
+      { "matcher": "AskUserQuestion", "hooks": [{ "type": "command", "command": "( exec \"${HRELAY_GUARD_BIN:?}\" --root \"${DELIVER_ROOT:?}\" claude-hook --role \"${HERDR_RELAY_FROM:?}\" --pane \"${HERDR_PANE_ID:?}\" ) || exit 2", "timeout": 10 }] }
+    ]
+  }
+}

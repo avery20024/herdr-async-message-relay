@@ -47,7 +47,7 @@ herdr plugin install avery20024/herdr-async-message-relay
 省略 `--ref` 即採 Herdr 的預設來源。只有需要固定版本、回退或可重現安裝時才指定，例如：
 
 ```sh
-herdr plugin install avery20024/herdr-async-message-relay --ref v0.3.0
+herdr plugin install avery20024/herdr-async-message-relay --ref v0.4.0
 ```
 
 Herdr 更新會沿用安裝時記錄的 ref。若既有安裝已鎖定 tag，請不帶 `--ref` 重新安裝以改用預設來源；只執行 `herdr plugin update` 仍會沿用原本的 tag。
@@ -73,15 +73,31 @@ sh scripts/install-binary.sh
 
 checksum 可偵測損毀或與下載清單不符的成品，但無法防禦發布帳號遭入侵、同時替換成品與 checksum 的情況。下載需要 HTTPS 與可連線的 GitHub Release；不會悄悄改為本機編譯。
 
-## 指令總覽（尚未發布）
+## Claude 問答安全閘門（v0.4.0、實驗性）
 
-新增的總覽是開發中功能，**已發布的 v0.3.0 執行檔尚不包含此功能**：
+v0.4.0 新增按接收角色明確啟用的 `claude-guard`／`claude-hook` 實驗性功能。它使用 Claude Code 的同步 `AskUserQuestion` Hooks，在 Herdr 誤報 idle 時補上一層投遞阻擋，不依賴畫面寬度或文字換行。未啟用角色維持原有行為；不自動安裝 Hooks、不修改 Claude 設定或重啟服務。
+
+啟用後，問答未結束、狀態缺失／損壞或 session／pane 不匹配時，訊息保持 queued；失敗／中斷不以逾時自動放行。這不是 Claude 的原生即時查詢 API，不涵蓋所有授權／確認對話框，已在真實 Claude Code v2.1.308／Herdr 0.9.3 確認問答追蹤與親自回答後才投遞；該輪 Herdr 全程正確回報 blocked，未重現 idle 誤判，取消／中斷與真實鎖衝突仍未驗證。測試通知確實出現在回答後，但 Claude 未依通知回覆指定確認文字，因此送達不等於通知內容已處理。取消工具不保證有成對結束事件，可能需人工檢查後恢復。Hooks 未運行、被停用或逾時等情況仍可能突破保護，因此不能宣稱完全消除競態。
+
+設定流程、復原限制與隔離測試說明見 [實驗性閘門文件](docs/claude-question-guard.md)；可選設定範例見 [Claude Hooks JSON](examples/claude-question-guard.settings.json)。早於 v0.4.0 的執行檔不含此功能。
+
+## 指令總覽（v0.4.0）
+
+指令總覽自 v0.4.0 提供，**v0.3.0 執行檔不包含此功能**：
 
 ```sh
 hrelay help
 hrelay --help
 hrelay --lang zh-TW help
+hrelay help send
+hrelay send --help
+hrelay --lang zh-TW help service restart
+hrelay cli install --help
 ```
+
+詳細主題涵蓋所有主指令，以及 `server`、`service`、`cli` 的子指令，包含選項、預設值、範例與安全提醒。`hrelay help COMMAND [SUBCOMMAND]` 輸出至 stdout；`hrelay COMMAND [SUBCOMMAND] --help`（或 `-h`）將相同說明輸出至 stderr，並以成功退出碼結束。未知主題會在載入設定前回報錯誤。即使專案不存在、worker 設定無效或缺少 Herdr／服務管理工具，仍可查閱所有 help；查閱不會安裝 CLI 或觸碰佇列。一般服務查詢則不同：`service status`／`list` 可能建立服務管理紀錄。
+
+help 辨識遵循一般旗標解析規則：選項放在位置參數前；作為字串選項值或訊息資料的 `--help` 不會被攔截。全域 `--lang`／`--root` 仍須放在主指令前。例如 `send --to gm --body '--help'` 仍是送信操作，不是查閱說明。短送信語法的 `--ensure` 預設 true，`--to`／`--body` 語法則預設 false；詳細說明會呈現此差異，但不會啟動服務。
 
 內容涵蓋送信、查詢、服務管理、CLI 安裝、Herdr 插件 actions、環境設定與安全提醒。`help` 輸出至 stdout；根層 `--help` 輸出至 stderr 並列出全域選項。兩者不要求有效專案、執行中的 relay 或 Herdr socket，也不啟動服務或建立佇列。全域 `--root`／`--lang` 放在子指令前；根目錄依 `--root` → `DELIVER_ROOT` → 當前目錄選擇，不會向上搜尋。
 
