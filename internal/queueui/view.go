@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 	"github.com/avery20024/herdr-async-message-relay/internal/sqlc"
 	"github.com/charmbracelet/x/ansi"
@@ -65,22 +66,29 @@ func (m *Model) text(s string) string {
 }
 
 var labels = map[string]string{
+	"Preferences": "偏好設定", "Language": "語系", "Theme": "主題", "Auto": "自動", "Terminal (default)": "終端預設",
+	"Preferences storage unavailable.": "偏好設定儲存位置無法使用。", "Unable to load preferences.": "無法載入偏好設定。", "Unable to save preferences.": "無法儲存偏好設定。", "Preferences reloaded.": "已重載偏好設定。", "Preferences saved.": "已儲存偏好設定。",
+	"↑↓ field ←→ value Enter save Esc cancel ^R reload":                                                      "↑↓選項 ←→設定 Enter儲存 Esc取消 ^R重載",
+	"j/k select u/d list U/D body [] data r refresh P clear filters ^F filters ^P prefs ^R config ^W auto q": "j/k選列 u/d半頁 U/D本文 []資料 r刷新 P 清除篩選 ^F篩選 ^P設定 ^R重載 ^W自動 q離開",
+	"j/k u/d U/D [] r P clear filters ^F filter ^P prefs ^R reload ^W auto q":                                "j/k u/d U/D [] r P 清除篩選 ^F篩選 ^P設定 ^R重載 ^W自動 q",
+
+	"STALE": "未更新",
+	"↑↓ field ←→ value d clear P clear-all Enter apply Esc cancel": "↑↓選項 ←→條件 d清此項 P全清 Enter套用 Esc取消",
+	"From": "寄", "To": "收", "Time": "入庫", "Delivery": "投遞", "Seq": "序", "Key": "鍵", "Updated": "更新", "Evidence": "證據", "Data": "資料", "Body": "本文", "Path": "路徑",
 	"Sender": "發件者", "Stored": "收件／入庫", "State": "狀態", "Message": "訊息內容", "Recipient": "收件人", "Delivery time": "投遞時間",
-	"Details": "訊息資料", "Message body": "訊息本文", "Sequence": "序號", "Idempotency key": "冪等鍵", "Batch updated": "批次更新", "line": "行", "No messages.": "沒有訊息。", "No matching messages.": "沒有符合篩選的訊息。", "Loading…": "載入中…", "Unable to load history.": "無法載入歷史資料。", "Manual": "手動", "Auto (1s)": "自動（每秒）", "DATA NOT UPDATED": "資料未更新", "Filters": "篩選", "All": "全部", "Enlarge terminal (minimum 74 × 16).": "請放大終端（至少 74 × 16）。",
+	"Details": "訊息資料", "Message body": "訊息本文", "Sequence": "序號", "Idempotency key": "冪等鍵", "Batch updated": "批次更新", "line": "行", "No messages.": "沒有訊息。", "No matching messages.": "沒有符合篩選的訊息。", "Loading…": "載入中…", "Unable to load history.": "無法載入歷史資料。", "Manual": "手動", "Auto (1s)": "自動（每秒）", "DATA NOT UPDATED": "資料未更新", "Filters": "篩選", "All": "全部", "Minimum 20 × 10 cells.": "至少需 20 × 10 格。",
 	"Root": "實例路徑", "ID": "識別碼", "Batch": "批次", "Automatic submission record": "自動提交紀錄", "Manual confirmation record (not original delivery time)": "人工確認紀錄（非原始投遞時間）", "Batch evidence": "批次證據", "No reliable delivery time": "無可靠投遞時間", "Submission is not a read receipt.": "提交不代表已讀、接單或完成。", "Control sequences are hidden; stored body is unchanged.": "控制序列已隱藏；儲存本文未改寫。",
-	"Selection no longer matches filters; moved to first row.":                                   "選取訊息已不符合篩選，移至第一列。",
-	"↑/↓ field  ←/→ value  Enter apply  Esc cancel":                                              "↑/↓ 選項  ←/→ 條件  Enter 套用  Esc 取消",
-	"j/k select  u/d list ½  U/D body  [/] data  r refresh  Ctrl+P filters  Ctrl+W auto  q quit": "j/k 選列  u/d 列表半頁  U/D 本文  [/] 資料  r 刷新  Ctrl+P 篩選  Ctrl+W 自動  q 離開",
-	"j/k select u/d list U/D body [] data r ^P filters ^W auto q":                                "j/k選列 u/d半頁 U/D本文 []資料 r刷新 ^P篩選 ^W自動 q離開",
+	"Selection no longer matches filters; moved to first row.": "選取訊息已不符合篩選，移至第一列。",
+	"↑/↓ field  ←/→ value  Enter apply  Esc cancel":            "↑/↓ 選項  ←/→ 條件  Enter 套用  Esc 取消",
 }
 
-func (m *Model) contentHeight() int    { return max(1, m.height-4) }
+func (m *Model) contentHeight() int    { return max(1, m.height-3) }
 func (m *Model) tableWidth() int       { return max(1, m.width-2) }
 func (m *Model) tableHeight() int      { return max(1, (m.contentHeight()-1)/2) }
 func (m *Model) metadataWidth() int    { return max(1, (m.tableWidth()-1)*4/10) }
 func (m *Model) detailWidth() int      { return max(1, m.tableWidth()-m.metadataWidth()-1) }
 func (m *Model) detailPageHeight() int { return max(1, m.contentHeight()-m.tableHeight()-1) }
-func (m *Model) listHalfPage() int     { return max(1, (m.tableHeight()-1)/2) }
+func (m *Model) listHalfPage() int     { return max(1, m.visibleMessages()/2) }
 
 // 本文只有右下區使用，與左側中繼資料的內容及捲動位置完全分離。
 func (m *Model) detailLines() []string {
@@ -94,12 +102,13 @@ func (m *Model) metadataLines() []string {
 		return []string{m.text("No messages.")}
 	}
 	row := m.rows[m.selected]
-	text := m.text("Sender") + ": " + row.Sender + " → " + m.text("Recipient") + ": " + row.Recipient + "\n" + m.text("State") + ": " + row.State + "\n" + m.text("Stored") + ": " + stamp(row.CreatedAt, true) + "\n" + m.text("Delivery time") + ": " + stamp(delivered(row), true)
+	label := m.metadataLabel
+	text := label("Sender") + ": " + row.Sender + " → " + label("Recipient") + ": " + row.Recipient + "\n" + label("State") + ": " + row.State + "\n" + label("Stored") + ": " + stamp(row.CreatedAt, true) + "\n" + label("Delivery time") + ": " + stamp(delivered(row), true)
 	if delivered(row) > 0 {
 		text += "\n" + m.text("Automatic submission record")
 	}
 	if row.BatchID.Valid {
-		text += "\n" + m.text("Batch") + ": " + row.BatchID.String + " (" + row.BatchState.String + ")"
+		text += "\n" + label("Batch") + ": " + row.BatchID.String + " (" + row.BatchState.String + ")"
 	}
 	if row.BatchState.String == "resolved_submitted" && row.BatchUpdatedAt.Valid {
 		text += "\n" + m.text("Manual confirmation record (not original delivery time)") + ": " + stamp(row.BatchUpdatedAt.Int64, true)
@@ -107,18 +116,18 @@ func (m *Model) metadataLines() []string {
 		text += "\n" + m.text("No reliable delivery time")
 	}
 	if row.BatchDetail.Valid && row.BatchDetail.String != "" {
-		text += "\n" + m.text("Batch evidence") + ": " + row.BatchDetail.String
+		text += "\n" + label("Batch evidence") + ": " + row.BatchDetail.String
 	}
-	text += "\n" + m.text("ID") + ": " + row.ID + "\n" + m.text("Sequence") + ": " + fmt.Sprint(row.Seq) + "\n" + m.text("Idempotency key") + ": " + row.IdempotencyKey
+	text += "\n" + label("ID") + ": " + row.ID + "\n" + label("Sequence") + ": " + fmt.Sprint(row.Seq) + "\n" + label("Idempotency key") + ": " + row.IdempotencyKey
 	if row.BatchUpdatedAt.Valid {
-		text += "\n" + m.text("Batch updated") + ": " + stamp(row.BatchUpdatedAt.Int64, true)
+		text += "\n" + label("Batch updated") + ": " + stamp(row.BatchUpdatedAt.Int64, true)
 	}
-	text += "\n" + m.text("Root") + ": " + m.root + "\n" + m.text("Submission is not a read receipt.") + "\n" + m.text("Control sequences are hidden; stored body is unchanged.")
-	return strings.Split(ansi.Hardwrap(clean(text), m.metadataWidth(), true), "\n")
+	text += "\n" + label("Root") + ": " + m.root + "\n" + m.text("Submission is not a read receipt.") + "\n" + m.text("Control sequences are hidden; stored body is unchanged.")
+	return strings.Split(ansi.Wrap(clean(text), m.metadataWidth(), " /"), "\n")
 }
 func (m *Model) clampLayout() {
 	m.selected = max(0, min(m.selected, max(0, len(m.rows)-1)))
-	visible := max(1, m.tableHeight()-1)
+	visible := m.visibleMessages()
 	if m.selected < m.top {
 		m.top = m.selected
 	}
@@ -130,8 +139,11 @@ func (m *Model) clampLayout() {
 	m.metadataOffset = max(0, min(m.metadataOffset, max(0, len(m.metadataLines())-m.detailPageHeight())))
 }
 func (m *Model) tableLines() []string {
+	if m.mobile() {
+		return m.cardLines()
+	}
 	width, height := max(1, m.tableWidth()), m.tableHeight()
-	widths := []int{10, 11, 11, max(1, width-62), 10, 13}
+	widths := []int{10, 11, 13, max(1, width-64), 10, 13}
 	line := func(fields []string) string {
 		parts := make([]string, 6)
 		for i := range parts {
@@ -139,16 +151,25 @@ func (m *Model) tableLines() []string {
 		}
 		return strings.Join(parts, " ")
 	}
-	result := []string{cell("  "+line([]string{m.text("Sender"), m.text("Stored"), m.text("State"), m.text("Message"), m.text("Recipient"), m.text("Delivery time")}), width)}
+	result := []string{m.styles.heading.Render(cell("  "+line([]string{m.text("Sender"), m.text("Stored"), m.text("State"), m.text("Message"), m.text("Recipient"), m.text("Delivery time")}), width))}
 	for i := m.top; i < len(m.rows) && len(result) < height; i++ {
 		row := m.rows[i]
-		prefix := "  "
-		if i == m.selected {
-			prefix = "> "
+		fields := []string{row.Sender, stamp(row.CreatedAt, false), stateLabel(row.State), summaryText(row.Body), row.Recipient, stamp(delivered(row), false)}
+		parts := make([]string, len(fields))
+		for col, value := range fields {
+			parts[col] = cell(value, widths[col])
+			if i != m.selected {
+				switch col {
+				case 1, 5:
+					parts[col] = m.styles.muted.Render(parts[col])
+				case 2:
+					parts[col] = m.styles.states[row.State].Render(parts[col])
+				}
+			}
 		}
-		rendered := cell(prefix+line([]string{row.Sender, stamp(row.CreatedAt, false), row.State, row.Body, row.Recipient, stamp(delivered(row), false)}), width)
+		rendered := trustedCell("  "+strings.Join(parts, " "), width)
 		if i == m.selected {
-			rendered = "\x1b[7m" + rendered + "\x1b[0m"
+			rendered = m.styles.selected.Render(cell("▌ "+line(fields), width))
 		}
 		result = append(result, rendered)
 	}
@@ -162,7 +183,7 @@ func (m *Model) tableLines() []string {
 		} else if m.filter != (Filter{}) {
 			text = m.text("No matching messages.")
 		}
-		result = append(result, cell(text, width))
+		result = append(result, m.styles.muted.Render(lipgloss.PlaceHorizontal(width, lipgloss.Center, clean(text))))
 	}
 	for len(result) < height {
 		result = append(result, strings.Repeat(" ", width))
@@ -171,70 +192,96 @@ func (m *Model) tableLines() []string {
 }
 func (m *Model) View() tea.View {
 	width := max(1, m.width)
-	if m.width < 74 || m.height < 16 {
-		v := tea.NewView(cell(m.text("Enlarge terminal (minimum 74 × 16)."), width))
+	if m.width < minimumWidth || m.height < minimumHeight {
+		output := cell(m.text("Minimum 20 × 10 cells."), width)
+		if p, ok := palettes[m.preferences.Theme]; ok && p.light && !m.noColor {
+			output += strings.Repeat("\n"+strings.Repeat(" ", width), max(0, m.height-1))
+		}
+		v := tea.NewView(m.paintCanvas(output))
 		v.AltScreen = true
 		return v
 	}
 	content := m.tableLines()
 	detail, metadata := m.detailLines(), m.metadataLines()
 	dh, dw, mw := m.detailPageHeight(), m.detailWidth(), m.metadataWidth()
-	bodyTitle := fmt.Sprintf(" %s · %s %d/%d U/D ", m.text("Message body"), m.text("line"), m.detailOffset+1, len(detail))
-	metadataTitle := fmt.Sprintf(" %s · %s %d/%d [] ", m.text("Details"), m.text("line"), m.metadataOffset+1, len(metadata))
-	content = append(content, cell(metadataTitle, mw)+"┬"+cell(bodyTitle, dw))
+	metadataTitle, bodyTitle := m.lowerTitles(len(metadata), len(detail))
+	content = append(content, m.styles.heading.Render(cell(metadataTitle, mw))+m.styles.border.Render("┬")+m.styles.heading.Render(cell(bodyTitle, dw)))
+	leftViewport := textViewport(metadata, mw, dh, m.metadataOffset)
+	rightViewport := textViewport(detail, dw, dh, m.detailOffset)
+	leftLines := strings.Split(leftViewport.View(), "\n")
+	rightLines := strings.Split(rightViewport.View(), "\n")
 	for i := 0; i < dh; i++ {
 		left, right := "", ""
-		if idx := i + m.metadataOffset; idx < len(metadata) {
-			left = metadata[idx]
+		if i < len(leftLines) {
+			left = leftLines[i]
 		}
-		if idx := i + m.detailOffset; idx < len(detail) {
-			right = detail[idx]
+		if i < len(rightLines) {
+			right = rightLines[i]
 		}
-		content = append(content, cell(left, mw)+"│"+cell(right, dw))
+		content = append(content, trustedCell(left, mw)+m.styles.border.Render("│")+trustedCell(right, dw))
 	}
-	if m.popup {
-		popup := []string{m.text("Filters"), "", m.text("Sender") + ": " + m.choice(m.draft.Sender), m.text("Recipient") + ": " + m.choice(m.draft.Recipient), m.text("State") + ": " + m.choice(m.draft.State), "", m.text("↑/↓ field  ←/→ value  Enter apply  Esc cancel")}
-		popup[m.field+2] = "> " + popup[m.field+2]
-		// 彈窗覆蓋內容中央，不讓終端序列或底層畫面穿透。
+	if m.popup || m.preferencesOpen {
+		popup := []string{m.text("Filters"), "", m.text("Sender") + ": " + m.choice(m.draft.Sender), m.text("Recipient") + ": " + m.choice(m.draft.Recipient), m.text("State") + ": " + m.choice(m.draft.State), "", m.text("↑↓ field ←→ value d clear P clear-all Enter apply Esc cancel")}
+		selectedField := m.field + 2
 		pw := min(width-6, 72)
-		start := (len(content) - len(popup) - 2) / 2
-		panel := []string{"┌" + strings.Repeat("─", pw-2) + "┐"}
-		for _, line := range popup {
-			panel = append(panel, "│"+cell(line, pw-2)+"│")
+		if !m.preferencesOpen && (m.mobile() || len(content) < len(popup)+2) {
+			popup = []string{m.text("Filters"), m.metadataLabel("Sender") + ": " + m.choice(m.draft.Sender), m.metadataLabel("Recipient") + ": " + m.choice(m.draft.Recipient), m.metadataLabel("State") + ": " + m.choice(m.draft.State)}
+			selectedField = m.field + 1
+			pw = min(width-4, 72)
 		}
-		panel = append(panel, "└"+strings.Repeat("─", pw-2)+"┘")
-		for i, line := range panel {
-			if start+i >= 0 && start+i < len(content) {
-				pad := (width - 2 - pw) / 2
-				content[start+i] = strings.Repeat(" ", pad) + line + strings.Repeat(" ", width-2-pad-pw)
+		if m.preferencesOpen {
+			popup = m.preferencesLines()
+			selectedField = m.preferenceField + 1
+			pw = min(width-4, 72)
+		}
+		for i, line := range popup {
+			prefix := "  "
+			if i == selectedField {
+				prefix = "▌ "
 			}
+			popup[i] = cell(prefix+line, pw-2)
+			if i == selectedField {
+				popup[i] = m.styles.selected.Render(popup[i])
+			} else if i == 0 {
+				popup[i] = m.styles.accent.Render(popup[i])
+			}
+		}
+		panel := m.styles.dialog.Border(lipgloss.RoundedBorder()).BorderForeground(m.styles.border.GetForeground()).Render(strings.Join(popup, "\n"))
+		// 用cell圖層處理寬字與樣式，不清空彈窗兩側原本的資料。
+		base := lipgloss.NewLayer(strings.Join(content, "\n"))
+		overlay := lipgloss.NewLayer(panel).X((width - 2 - pw) / 2).Y((len(content) - len(popup) - 2) / 2).Z(1)
+		content = strings.Split(lipgloss.NewCompositor(base, overlay).Render(), "\n")
+		// compositor會省略尾端空白，補回固定列寬以清除舊畫面且維持外框位置。
+		for i := range content {
+			content[i] = trustedCell(content[i], width-2)
 		}
 	}
 	title := " " + clean(filepath.Base(m.root)) + " · hrelay ui "
-	output := "┌" + cell(title, width-2) + "┐\n"
-	for _, line := range content {
-		output += "│" + line + "│\n"
+	summary := fmt.Sprintf("%d/%d", min(m.selected+1, len(m.rows)), len(m.rows))
+	if m.next > 0 {
+		summary += "+"
 	}
-	output += "└" + strings.Repeat("─", width-2) + "┘\n"
-	mode := m.text("Manual")
-	if m.auto {
-		mode = m.text("Auto (1s)")
-	}
-	status := fmt.Sprintf("%s | %d/%d", mode, min(m.selected+1, len(m.rows)), len(m.rows))
-	if m.busy {
-		status += " | " + m.text("Loading…")
+	if m.configError != "" {
+		summary = "! CFG"
 	}
 	if m.lastError != "" {
-		status += " | " + m.text("DATA NOT UPDATED") + ": " + m.lastError
-	} else if m.notice != "" {
-		status += " | " + m.notice
+		summary = "! " + m.staleText()
+		if m.configError != "" {
+			summary = "!STALE/CFG"
+		}
 	}
-	help := m.text("j/k select  u/d list ½  U/D body  [/] data  r refresh  Ctrl+P filters  Ctrl+W auto  q quit")
-	if ansi.StringWidth(help) > width {
-		help = m.text("j/k select u/d list U/D body [] data r ^P filters ^W auto q")
+	summary = ansi.Truncate(summary, max(1, width-10), "…")
+	header := m.styles.title.Render(cell(title, width-4-ansi.StringWidth(summary))) + m.styles.title.Render(" "+summary+" ")
+	if m.lastError != "" {
+		header = m.styles.title.Render(cell(title, width-4-ansi.StringWidth(summary))) + m.styles.failure.Render(" "+summary+" ")
 	}
-	output += cell(status, width) + "\n" + cell(help, width)
-	v := tea.NewView(output)
+	output := m.styles.border.Render("┌") + header + m.styles.border.Render("┐") + "\n"
+	for _, line := range content {
+		output += m.styles.border.Render("│") + line + m.styles.border.Render("│") + "\n"
+	}
+	output += m.styles.border.Render("└"+strings.Repeat("─", width-2)+"┘") + "\n"
+	output += m.footerLine()
+	v := tea.NewView(m.paintCanvas(output))
 	v.AltScreen = true
 	return v
 }

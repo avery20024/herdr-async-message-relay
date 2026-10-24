@@ -46,6 +46,10 @@ func key(name string) tea.KeyPressMsg {
 	switch name {
 	case "ctrl+p":
 		return tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl}
+	case "ctrl+f":
+		return tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl}
+	case "ctrl+r":
+		return tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl}
 	case "ctrl+w":
 		return tea.KeyPressMsg{Code: 'w', Mod: tea.ModCtrl}
 	case "ctrl+c":
@@ -61,12 +65,27 @@ func key(name string) tea.KeyPressMsg {
 	}
 	return tea.KeyPressMsg{Code: rune(name[0])}
 }
+
+// 派發當次批次（請求、spinner啟動與背景查詢）；回傳的timer由專項測試驗證，不在此無限循環。
+func apply(m *Model, cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, child := range batch {
+			apply(m, child)
+		}
+		return
+	}
+	m.Update(msg)
+}
 func ready(t *testing.T) (*Model, *fakeLoader) {
 	t.Helper()
 	f := &fakeLoader{}
 	m := NewModel(t.Context(), f, "/team", i18n.English)
 	m.Update(tea.WindowSizeMsg{Width: 180, Height: 30})
-	m.Update(m.Init()())
+	apply(m, m.Init())
 	return m, f
 }
 func TestSelectionPagingRefreshAndErrors(t *testing.T) {
@@ -81,33 +100,33 @@ func TestSelectionPagingRefreshAndErrors(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("no lazy load")
 	}
-	m.Update(cmd())
+	apply(m, cmd)
 	if m.selectedID() != "75" || len(m.rows) != 100 {
 		t.Fatalf("pagination %s %d", m.selectedID(), len(m.rows))
 	}
 	m.Update(key("D"))
 	offset := m.detailOffset
 	_, cmd = m.Update(key("r"))
-	m.Update(cmd())
+	apply(m, cmd)
 	if m.selectedID() != "75" || m.detailOffset != offset || len(f.calls) != 4 {
 		t.Fatalf("refresh lost selection: %s %d calls=%v", m.selectedID(), m.detailOffset, f.calls)
 	}
 	f.err = errors.New("disconnected\x1b[2J")
 	_, cmd = m.Update(key("r"))
-	m.Update(cmd())
+	apply(m, cmd)
 	if m.selectedID() != "75" || !strings.Contains(m.View().Content, "DATA NOT UPDATED") || strings.Contains(m.lastError, "\x1b") {
 		t.Fatal("failure lost data or leaked control")
 	}
 	f.err = nil
 	_, cmd = m.Update(key("r"))
-	m.Update(cmd())
+	apply(m, cmd)
 	if m.lastError != "" {
 		t.Fatal("retry did not recover")
 	}
 }
 func TestFilterDraftCancellationAndStaleResponse(t *testing.T) {
 	m, f := ready(t)
-	m.Update(key("ctrl+p"))
+	m.Update(key("ctrl+f"))
 	m.Update(key("right"))
 	if m.draft.Sender != "arch" || m.filter.Sender != "" {
 		t.Fatal("draft altered active filter")
@@ -118,7 +137,7 @@ func TestFilterDraftCancellationAndStaleResponse(t *testing.T) {
 	}
 	_, old := m.Update(key("r"))
 	oldToken := m.token
-	m.Update(key("ctrl+p"))
+	m.Update(key("ctrl+f"))
 	m.Update(key("right"))
 	m.Update(key("down"))
 	m.Update(key("right"))
@@ -134,7 +153,7 @@ func TestFilterDraftCancellationAndStaleResponse(t *testing.T) {
 	if len(m.rows) != 0 {
 		t.Fatal("stale response replaced new filter")
 	}
-	m.Update(next())
+	apply(m, next)
 	if f.filters[len(f.filters)-1] != m.filter {
 		t.Fatal("query used old filter")
 	}
@@ -156,7 +175,7 @@ func TestAutoTimerAndQuit(t *testing.T) {
 	if _, cmd := m.Update(tickMsg(old)); cmd != nil {
 		t.Fatal("old tick kept refreshing")
 	}
-	m.Update(key("ctrl+p"))
+	m.Update(key("ctrl+f"))
 	if _, cmd := m.Update(key("q")); cmd != nil || !m.popup {
 		t.Fatal("popup keys leaked")
 	}

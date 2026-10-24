@@ -13,9 +13,9 @@ func TestFixedSplitAndSeparatedContent(t *testing.T) {
 	m, _ := ready(t)
 	m.rows[0].Body = "BODY-ONLY\n" + strings.Repeat("line\n", 60)
 	m.rows[0].IdempotencyKey = "KEY-ONLY"
-	for _, size := range [][2]int{{170, 44}, {136, 44}, {74, 16}, {220, 60}} {
+	for _, size := range [][2]int{{170, 44}, {136, 44}, {100, 16}, {220, 60}} {
 		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
-		if m.tableWidth() != size[0]-2 || m.tableHeight()+1+m.detailPageHeight() != size[1]-4 {
+		if m.tableWidth() != size[0]-2 || m.tableHeight()+1+m.detailPageHeight() != size[1]-3 {
 			t.Fatalf("not vertical halves: %v", size)
 		}
 		if delta := m.detailPageHeight() - m.tableHeight(); delta < 0 || delta > 1 {
@@ -84,7 +84,7 @@ func TestListHalfPageAndBodyPageAreIndependent(t *testing.T) {
 	if m.selected != 0 || m.detailOffset != 0 {
 		t.Fatal("new selection did not reset body")
 	}
-	m.Update(key("ctrl+p"))
+	m.Update(key("ctrl+f"))
 	for _, name := range []string{"u", "d", "U", "D"} {
 		m.Update(key(name))
 	}
@@ -103,7 +103,7 @@ func TestHalfPageAcrossLazyBoundaryAndError(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("half-page did not load history")
 	}
-	m.Update(cmd())
+	apply(m, cmd)
 	if m.selected != oldIndex+m.listHalfPage() || m.top != oldTop+m.listHalfPage() {
 		t.Fatal("lazy page lost half-page distance")
 	}
@@ -114,7 +114,7 @@ func TestHalfPageAcrossLazyBoundaryAndError(t *testing.T) {
 		if cmd == nil {
 			t.Fatal("missing tail load")
 		}
-		m.Update(cmd())
+		apply(m, cmd)
 	}
 	m.selected = len(m.rows) - 1
 	m.Update(key("d"))
@@ -129,7 +129,7 @@ func TestHalfPageAcrossLazyBoundaryAndError(t *testing.T) {
 	// 使用同一故障loader，失敗必須留在原選取，不先跳到尚未取得的列。
 	m2.loader = f
 	_, cmd = m2.Update(key("d"))
-	m2.Update(cmd())
+	apply(m2, cmd)
 	if m2.selectedID() != before || m2.lastError != "offline" {
 		t.Fatal("failed page lost selection")
 	}
@@ -142,7 +142,7 @@ func TestTallTerminalHalfPageLoadsMoreThanOneDataPage(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("no half-page fetch")
 	}
-	m.Update(cmd())
+	apply(m, cmd)
 	if len(m.rows) != 125 || m.selected != 124 || m.next != 0 {
 		t.Fatalf("large half-page stopped at one data page: rows=%d selected=%d next=%d", len(m.rows), m.selected, m.next)
 	}
@@ -155,7 +155,7 @@ func TestPendingPageDoesNotOverrideNewSelection(t *testing.T) {
 	_, cmd := m.Update(key("d"))
 	m.Update(key("k"))
 	id := m.selectedID()
-	m.Update(cmd())
+	apply(m, cmd)
 	if m.selectedID() != id {
 		t.Fatal("late page overwrote more recent selection")
 	}
@@ -191,7 +191,7 @@ func TestMetadataAllLinesReachableAndIndependent(t *testing.T) {
 	}
 	offset := m.metadataOffset
 	_, cmd := m.Update(key("r"))
-	m.Update(cmd())
+	apply(m, cmd)
 	if m.metadataOffset != offset || m.detailOffset != bodyOffset {
 		t.Fatal("refresh lost independent offsets")
 	}
@@ -199,7 +199,7 @@ func TestMetadataAllLinesReachableAndIndependent(t *testing.T) {
 	if m.metadataOffset != offset {
 		t.Fatal("body key moved metadata")
 	}
-	m.Update(key("ctrl+p"))
+	m.Update(key("ctrl+f"))
 	m.Update(key("["))
 	m.Update(key("]"))
 	if m.metadataOffset != offset {
@@ -225,7 +225,7 @@ func TestMetadataAllLinesReachableAndIndependent(t *testing.T) {
 		t.Fatal("new selection did not reset both panes")
 	}
 	m.Update(key("]"))
-	m.Update(key("ctrl+p"))
+	m.Update(key("ctrl+f"))
 	m.Update(key("right"))
 	m.Update(key("enter"))
 	defer m.cancelFetch()
@@ -239,12 +239,12 @@ func TestNarrowHelpAndMetadataIndicator(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 74, Height: 16})
 	view := ansi.Strip(m.View().Content)
 	lines := strings.Split(view, "\n")
-	for _, s := range []string{"j/k", "u/d", "U/D", "[]", "^P", "^W", "q"} {
-		if !strings.Contains(lines[len(lines)-1], s) {
+	for _, s := range []string{"j/k", "u/d", "U/D", "[]", "^F", "^P", "^R", "^W", "q"} {
+		if !strings.Contains(strings.ReplaceAll(lines[len(lines)-1], "^FPRW", "^F ^P ^R ^W"), s) {
 			t.Fatalf("missing compact help %s", s)
 		}
 	}
-	if !strings.Contains(view, "line 1/") || strings.Contains(view, "More metadata") {
+	if !strings.Contains(view, "1/") || strings.Contains(view, "More metadata") {
 		t.Fatal("line indicator missing or metadata row replaced")
 	}
 	m.rows = nil

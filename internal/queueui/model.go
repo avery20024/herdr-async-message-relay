@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/avery20024/herdr-async-message-relay/internal/deliver"
 	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 	"github.com/avery20024/herdr-async-message-relay/internal/sqlc"
+	"github.com/charmbracelet/colorprofile"
 )
 
 type pageMsg struct {
@@ -20,34 +22,47 @@ type pageMsg struct {
 type tickMsg uint64
 
 type Model struct {
-	ctx                          context.Context
-	loader                       Loader
-	language                     i18n.Language
-	root                         string
-	width, height                int
-	rows                         []sqlc.BrowseMessagesRow
-	senders, recipients          []string
-	next                         int64
-	selected, top, detailOffset  int
-	metadataOffset               int
-	pendingSelection, pendingTop int
-	pendingFrom                  string
-	filter, draft                Filter
-	popup                        bool
-	field                        int
-	auto                         bool
-	timer                        uint64
-	token                        uint64
-	busy, loaded                 bool
-	cancel                       context.CancelFunc
-	lastError                    string
-	notice                       string
+	ctx                               context.Context
+	loader                            Loader
+	language                          i18n.Language
+	baseLanguage                      i18n.Language
+	preferences, preferencesDraft     Preferences
+	preferencesStore                  PreferencesStore
+	preferencesOpen, configUnreadable bool
+	preferenceField                   int
+	configError, configNotice         string
+	root                              string
+	width, height                     int
+	rows                              []sqlc.BrowseMessagesRow
+	senders, recipients               []string
+	next                              int64
+	selected, top, detailOffset       int
+	metadataOffset                    int
+	pendingSelection, pendingTop      int
+	pendingFrom                       string
+	filter, draft                     Filter
+	popup                             bool
+	field                             int
+	auto                              bool
+	timer                             uint64
+	token                             uint64
+	busy, loaded                      bool
+	cancel                            context.CancelFunc
+	lastError                         string
+	notice                            string
+	styles                            theme
+	dark, noColor                     bool
+	backgroundKnown                   bool
+	loading                           spinner.Model
 }
 
 func NewModel(ctx context.Context, loader Loader, root string, language i18n.Language) *Model {
-	return &Model{ctx: ctx, loader: loader, root: root, language: language}
+	mono := noColorEnv()
+	m := &Model{ctx: ctx, loader: loader, root: root, language: language, baseLanguage: language, preferences: defaultPreferences(), dark: true, noColor: mono, loading: spinner.New()}
+	m.refreshTheme()
+	return m
 }
-func (m *Model) Init() tea.Cmd { return m.fetch(false) }
+func (m *Model) Init() tea.Cmd { return tea.Batch(m.fetch(false), tea.RequestBackgroundColor) }
 
 func (m *Model) selectedID() string {
 	if len(m.rows) == 0 {
@@ -59,6 +74,8 @@ func (m *Model) fetch(appendPage bool) tea.Cmd {
 	if m.busy {
 		return nil
 	}
+	// 一次性偏好通知在下一次資料操作後讓回計數；設定錯誤另存，不在此清除。
+	m.configNotice = ""
 	m.token++
 	token := m.token
 	m.busy = true
@@ -74,7 +91,7 @@ func (m *Model) fetch(appendPage bool) tea.Cmd {
 	}
 	loader := m.loader
 	needed := max(1, m.pendingSelection-len(m.rows)+1)
-	return func() tea.Msg {
+	request := func() tea.Msg {
 		defer cancel()
 		result, err := loader.Page(ctx, filter, before)
 		// 刷新時以原選取 seq 為讀取深度，不能只取最新一頁後誤換訊息。
@@ -93,6 +110,9 @@ func (m *Model) fetch(appendPage bool) tea.Cmd {
 		}
 		return pageMsg{token: token, append: appendPage, page: result, err: err}
 	}
+	// 每次請求使用不同spinner ID，完成或取消後舊tick不再啟動計時器。
+	m.loading = spinner.New(spinner.WithSpinner(spinner.MiniDot))
+	return tea.Batch(request, m.loading.Tick)
 }
 func (m *Model) tick() tea.Cmd {
 	generation := m.timer
@@ -131,9 +151,51 @@ func (m *Model) moveSelection(delta int, halfPage bool) tea.Cmd {
 	return nil
 }
 
+// 草稿只有Enter套用；主畫面P也走同一路徑，避免重置漏掉游標／取消世代。
+func (m *Model) applyFilters(next Filter) tea.Cmd {
+	if m.filter == next {
+		return nil
+	}
+	m.cancelFetch()
+	m.filter, m.draft = next, next
+	m.rows = nil
+	m.next = 0
+	m.selected = 0
+	m.top = 0
+	m.detailOffset, m.metadataOffset = 0, 0
+	m.loaded = false
+	m.notice = ""
+	return m.fetch(false)
+}
+
+func (m *Model) clearDraftField() {
+	switch m.field {
+	case 0:
+		m.draft.Sender = ""
+	case 1:
+		m.draft.Recipient = ""
+	case 2:
+		m.draft.State = ""
+	}
+}
+
 func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	defer m.clampLayout()
 	switch msg := message.(type) {
+	case tea.BackgroundColorMsg:
+		m.backgroundKnown = true
+		m.dark = msg.IsDark()
+		m.refreshTheme()
+	case tea.ColorProfileMsg:
+		m.noColor = noColorEnv() || msg.Profile <= colorprofile.Ascii
+		m.refreshTheme()
+	case spinner.TickMsg:
+		if !m.busy || msg.ID != m.loading.ID() {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.loading, cmd = m.loading.Update(msg)
+		return m, cmd
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case tickMsg:
@@ -184,10 +246,19 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.loaded = true
 		m.lastError = ""
 	case tea.KeyPressMsg:
+		m.configNotice = ""
 		key := msg.String()
-		if key == "ctrl+c" || (!m.popup && key == "q") {
+		if key == "ctrl+c" || (!m.popup && !m.preferencesOpen && key == "q") {
 			m.cancelFetch()
 			return m, tea.Quit
+		}
+		if key == "ctrl+r" {
+			m.reloadPreferences()
+			return m, nil
+		}
+		if m.preferencesOpen {
+			m.preferencesKey(key)
+			return m, nil
 		}
 		if m.popup {
 			switch key {
@@ -201,30 +272,28 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.cycle(-1)
 			case "right", "l":
 				m.cycle(1)
+			case "d":
+				m.clearDraftField()
+			case "P", "shift+p":
+				m.draft = Filter{}
 			case "enter":
 				m.popup = false
-				if m.filter != m.draft {
-					m.cancelFetch()
-					m.filter = m.draft
-					m.rows = nil
-					m.next = 0
-					m.selected = 0
-					m.top = 0
-					m.detailOffset, m.metadataOffset = 0, 0
-					m.loaded = false
-					m.notice = ""
-					return m, m.fetch(false)
-				}
+				return m, m.applyFilters(m.draft)
 			}
 			return m, nil
 		}
 		switch key {
+		case "P", "shift+p":
+			return m, m.applyFilters(Filter{})
 		case "ctrl+p":
+			m.openPreferences()
+		case "ctrl+f":
 			m.popup = true
 			m.draft = m.filter
 			m.field = 0
 		case "ctrl+w":
 			m.auto = !m.auto
+			m.refreshTheme()
 			m.timer++
 			if m.auto {
 				return m, m.tick()
@@ -240,13 +309,13 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			return m, m.moveSelection(m.listHalfPage(), true)
 		case "[":
-			m.metadataOffset = max(0, m.metadataOffset-m.detailPageHeight())
+			m.scrollText(true, false)
 		case "]":
-			m.metadataOffset = min(max(0, len(m.metadataLines())-m.detailPageHeight()), m.metadataOffset+m.detailPageHeight())
+			m.scrollText(true, true)
 		case "U", "shift+u":
-			m.detailOffset = max(0, m.detailOffset-m.detailPageHeight())
+			m.scrollText(false, false)
 		case "D", "shift+d":
-			m.detailOffset = min(max(0, len(m.detailLines())-m.detailPageHeight()), m.detailOffset+m.detailPageHeight())
+			m.scrollText(false, true)
 		}
 	}
 	return m, nil

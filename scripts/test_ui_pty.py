@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import select
 import signal
 import socketserver
@@ -16,6 +17,7 @@ import termios
 import threading
 import time
 import unittest
+from urllib.parse import parse_qs, urlsplit
 
 
 class UIHandler(http.server.BaseHTTPRequestHandler):
@@ -67,6 +69,7 @@ class UITerminalTests(unittest.TestCase):
         (self.root / "角色" / "gm").mkdir(parents=True)
         self.state = Path(self.temp.name) / "state"
         self.state.mkdir()
+        self.preferences = Path(self.temp.name) / "ui-preferences.json"
         # 與 Config.Socket 的命名保持一致，避免測試意外碰到其他 socket。
         path = self.state / "deliver.sock"
         self.assertFalse(path.exists())
@@ -96,9 +99,9 @@ class UITerminalTests(unittest.TestCase):
         self.thread.join(timeout=5)
         self.assertFalse(self.thread.is_alive())
 
-    def launch(self):
+    def launch(self, rows=30, columns=180, needle=b"PTY original body"):
         fd, slave = pty.openpty()
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 180, 0, 0))
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
         self.original = termios.tcgetattr(slave)
         pid = os.fork()
         if pid == 0:
@@ -111,7 +114,8 @@ class UITerminalTests(unittest.TestCase):
                 if slave > 2:
                     os.close(slave)
                 env = {"PATH": "/usr/bin:/bin", "TERM": "xterm-256color", "HOME": self.temp.name,
-                       "DELIVER_STATE_DIR": str(self.state), "LANG": "en_US.UTF-8"}
+                       "DELIVER_STATE_DIR": str(self.state), "LANG": "en_US.UTF-8",
+                       "HERDR_RELAY_UI_CONFIG": str(self.preferences)}
                 result = subprocess.run([self.binary, "--root", str(self.root), "--lang", "en", "ui"], env=env)
                 # macOS 在 session leader 離開後不可再對 slave 查 termios，需在此先查核。
                 restored = termios.tcgetattr(0)
@@ -128,7 +132,7 @@ class UITerminalTests(unittest.TestCase):
                 os._exit(127)
         self.child, self.fd, self.slave = pid, fd, slave
         self.addCleanup(os.close, slave)
-        self.wait_for(b"PTY original body")
+        self.wait_for(needle)
 
     def pump(self, duration):
         until = time.monotonic() + duration
@@ -149,6 +153,15 @@ class UITerminalTests(unittest.TestCase):
         while needle not in self.output and time.monotonic() < until:
             self.pump(0.05)
         self.assertIn(needle, self.output, bytes(self.output[-2000:]))
+
+    def wait_for_text(self, needle, timeout=8):
+        # 末欄字元會被renderer的自動換行開關分隔；只去CSI，不放寬文字本身。
+        def visible():
+            return re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", bytes(self.output))
+        until = time.monotonic() + timeout
+        while needle not in visible() and time.monotonic() < until:
+            self.pump(0.05)
+        self.assertIn(needle, visible(), bytes(self.output[-2000:]))
 
     def finish(self, key):
         os.write(self.fd, key)
@@ -172,7 +185,7 @@ class UITerminalTests(unittest.TestCase):
         os.write(self.fd, b"r")
         self.pump(0.3)
         self.assertGreater(len(self.server.requests), count)
-        os.write(self.fd, b"\x10")  # Ctrl+P
+        os.write(self.fd, b"\x06")  # Ctrl+F
         self.wait_for(b"Enter apply")
         os.write(self.fd, b"\x1b[C\r")  # sender=dev, Enter
         self.pump(0.3)
@@ -211,7 +224,7 @@ class UITerminalTests(unittest.TestCase):
         self.wait_for(b"BODY-FIRST-30")
         self.output.clear()
         os.write(self.fd, b"d")
-        self.wait_for(b"BODY-FIRST-25")  # 上半11筆可見列，半頁5筆。
+        self.wait_for(b"BODY-FIRST-24")  # 單列footer釋出一列，上半12筆可見，半頁6筆。
         self.output.clear()
         os.write(self.fd, b"u")
         self.wait_for(b"BODY-FIRST-30")
@@ -238,6 +251,168 @@ class UITerminalTests(unittest.TestCase):
         self.wait_for(b"META-FIRST")
         self.assertEqual(len(self.server.requests), count, "metadata paging must not fetch or mutate")
         self.finish(b"q")
+
+    def test_mobile_cards_navigation_filters_and_resize(self):
+        self.server.items = [
+            {"seq": seq, "id": f"mobile-{seq}", "sender": "dev", "recipient": "gm",
+             "state": "queued", "created_at": 1792771200000,
+             "body": f"READY\nFIRST{seq}\n" + "\n".join(f"B{seq}-{n:02}" for n in range(60)),
+             "batch_detail": {"String": "\n".join(f"Z6-{n:02}" for n in range(20)) + "\nPHONE-END", "Valid": True}}
+            for seq in range(30, 0, -1)
+        ]
+        self.launch(rows=20, columns=40, needle=b"READY")
+        count = len(self.server.requests)
+        self.assertNotIn(b"Enlarge terminal", self.output)
+        os.write(self.fd, b"D")
+        self.pump(0.2)
+        # Resize強制完整重畫；不以差分省略的共用前綴誤判按鍵失效。
+        self.output.clear()
+        fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 20, 41, 0, 0))
+        os.kill(self.child, signal.SIGWINCH)
+        self.wait_for(b"B30-06")
+        os.write(self.fd, b"U")
+        self.pump(0.2)
+        self.output.clear()
+        os.write(self.fd, b"d")
+        self.pump(0.2)
+        fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 20, 40, 0, 0))
+        os.kill(self.child, signal.SIGWINCH)
+        self.wait_for(b"FIRST28")  # 單列footer後可見4張完整卡片，半頁2筆。
+        self.output.clear()
+        for _ in range(20):
+            os.write(self.fd, b"]")
+            self.pump(0.08)
+        self.wait_for(b"PHONE-END")
+        self.assertEqual(len(self.server.requests), count, "phone scrolling must not issue requests")
+        os.write(self.fd, b"\x06")
+        self.wait_for_text(b"Enter Esc")
+        os.write(self.fd, b"\x1b[C\r")
+        self.pump(0.3)
+        self.assertTrue(any("sender=dev" in path for _, path in self.server.requests))
+        self.output.clear()
+        fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 10, 20, 0, 0))
+        os.kill(self.child, signal.SIGWINCH)
+        self.wait_for(b"READY")
+        self.assertNotIn(b"Minimum", self.output)
+        os.write(self.fd, b"\x06")
+        self.wait_for_text(b"Enter Esc")
+        os.write(self.fd, b"\x1b")
+        self.pump(0.2)
+        self.output.clear()
+        fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 16, 100, 0, 0))
+        os.kill(self.child, signal.SIGWINCH)
+        self.wait_for(b"Sender")  # 100欄回到桌面六欄。
+        self.finish(b"q")
+        self.assertTrue(all(method == "GET" for method, _ in self.server.requests))
+
+    def test_shift_p_and_d_clear_filter_drafts(self):
+        self.server.items = [{"seq": 1, "id": "reset-pty", "sender": "dev", "recipient": "gm",
+                              "state": "queued", "created_at": 1792771200000,
+                              "body": "PTY original body 中文\n" + "\n".join(f"RESET-{n:02}" for n in range(60))}]
+        self.launch()
+
+        def query():
+            return parse_qs(urlsplit(self.server.requests[-1][1]).query)
+
+        os.write(self.fd, b"\x06")
+        self.wait_for(b"Enter apply")
+        os.write(self.fd, b"\x1b[C\x1b[B\x1b[C\x1b[B\x1b[C\r")
+        self.pump(0.4)
+        self.assertEqual({k: query().get(k) for k in ("sender", "recipient", "state")},
+                         {"sender": ["dev"], "recipient": ["gm"], "state": ["queued"]})
+        count = len(self.server.requests)
+        os.write(self.fd, b"\x06\x1b[Bd")  # 選中recipient後d，只清草稿。
+        self.pump(0.2)
+        self.assertEqual(len(self.server.requests), count)
+        os.write(self.fd, b"\r")
+        self.pump(0.3)
+        self.assertNotIn("recipient", query())
+        self.assertEqual(query().get("sender"), ["dev"])
+        self.assertEqual(query().get("state"), ["queued"])
+        count = len(self.server.requests)
+        os.write(self.fd, b"\x06P\x1b")  # Shift+P清草稿後Esc，不套用。
+        self.pump(0.3)
+        self.assertEqual(len(self.server.requests), count)
+        os.write(self.fd, b"D")  # 仍翻本文，不清已套用的篩選。
+        self.pump(0.2)
+        self.assertEqual(len(self.server.requests), count)
+        os.write(self.fd, b"P")  # 主畫面立即清除全部篩選。
+        self.pump(0.4)
+        self.assertGreater(len(self.server.requests), count)
+        self.assertFalse(any(k in query() for k in ("sender", "recipient", "state")))
+        count = len(self.server.requests)
+        os.write(self.fd, b"P")
+        self.pump(0.2)
+        self.assertEqual(len(self.server.requests), count, "already-clear P is a no-op")
+        os.write(self.fd, b"\x06\x1b[C\r")
+        self.pump(0.3)
+        self.assertEqual(query().get("sender"), ["dev"])
+        os.write(self.fd, b"\x06P\r")  # 選單P全清後Enter才套用。
+        self.pump(0.3)
+        self.assertFalse(any(k in query() for k in ("sender", "recipient", "state")))
+        self.finish(b"q")
+        self.assertTrue(all(method == "GET" for method, _ in self.server.requests))
+
+    def test_preferences_persist_cross_root_and_manual_reload(self):
+        self.launch()
+        count = len(self.server.requests)
+        os.write(self.fd, b"\x10")  # Ctrl+P只開Preferences。
+        self.wait_for(b"Preferences")
+        os.write(self.fd, b"\x1b[C\x1b[C\x1b[B\x1b[C\r")  # 繁中＋Latte，Enter儲存。
+        self.pump(0.3)
+        self.assertEqual(json.loads(self.preferences.read_text()),
+                         {"version": 1, "language": "zh-TW", "theme": "catppuccin-latte"})
+        self.wait_for("P 清除篩選".encode())
+        self.assertEqual(len(self.server.requests), count)
+        self.output.clear()
+        self.preferences.write_text(json.dumps({"version": 1, "language": "en", "theme": "vesper"}))
+        self.pump(0.3)
+        self.assertNotIn(b"Preferences reloaded", self.output, "must not proactively reload")
+        os.write(self.fd, b"\x12")  # Ctrl+R只讀設定，不刷新訊息。
+        self.wait_for(b"Preferences reloaded.")
+        self.assertEqual(len(self.server.requests), count)
+        self.output.clear()
+        self.preferences.write_text(json.dumps({"version": 1, "language": "zh-TW", "theme": "rose-pine"}))
+        os.write(self.fd, b"\x10")  # 開Preferences也重新載入。
+        self.wait_for("偏好設定".encode())
+        self.wait_for("Rosé Pine".encode())
+        os.write(self.fd, b"\x1b")
+        self.pump(0.2)
+        self.finish(b"q")
+        os.close(self.fd)
+        self.fd = None
+        self.output.clear()
+        self.root = Path(self.temp.name).resolve() / "second-team"
+        (self.root / "角色" / "gm").mkdir(parents=True)
+        self.server.root = str(self.root)
+        self.launch()  # 同設定路徑／不同root，啟動直接沿用繁中。
+        self.wait_for("發件者".encode())
+        os.write(self.fd, b"\x10")
+        self.wait_for("Rosé Pine".encode())
+        self.finish(b"\x03")
+        self.assertTrue(all(method == "GET" for method, _ in self.server.requests))
+
+    def test_preferences_minimum_save_and_corrupt_reload(self):
+        self.server.items = [{"seq": 1, "id": "prefs-tiny", "sender": "dev", "recipient": "gm",
+                              "state": "queued", "created_at": 1792771200000, "body": "READY"}]
+        self.launch(rows=10, columns=20, needle=b"READY")
+        count = len(self.server.requests)
+        os.write(self.fd, b"\x10")
+        self.wait_for_text(b"Preferences")
+        os.write(self.fd, b"\x1b[B\x1b[C")
+        self.wait_for_text(b"Latte")
+        os.write(self.fd, b"\r")
+        self.pump(0.3)
+        self.assertEqual(json.loads(self.preferences.read_text())["theme"], "catppuccin-latte")
+        self.preferences.write_text("invalid preferences")
+        self.output.clear()
+        os.write(self.fd, b"\x12")
+        self.wait_for_text(b"! CFG")
+        self.assertEqual(len(self.server.requests), count)
+        os.write(self.fd, b"\x10\x1b[C\r")  # 損毀時不可覆寫，保留現有theme及draft。
+        self.pump(0.3)
+        self.assertEqual(self.preferences.read_text(), "invalid preferences")
+        self.finish(b"\x03")
 
     def test_ctrl_c_restores_terminal(self):
         self.launch()

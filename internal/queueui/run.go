@@ -20,6 +20,15 @@ func Run(ctx context.Context, c deliver.Config, language i18n.Language) error {
 	client := NewClient(c)
 	defer client.Close()
 	model := NewModel(ctx, client, c.Root, language)
+	path, pathErr := preferencesPath()
+	if pathErr != nil {
+		model.configError = clean(pathErr.Error())
+		model.configUnreadable = true
+	} else {
+		model.preferencesStore = FilePreferencesStore{Path: path}
+		model.reloadPreferences()
+		model.configNotice = ""
+	}
 	defer model.cancelFetch()
 	_, err := tea.NewProgram(model, tea.WithContext(ctx), tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)).Run()
 	if ctx.Err() != nil && (errors.Is(err, tea.ErrProgramKilled) || errors.Is(err, tea.ErrInterrupted)) {
