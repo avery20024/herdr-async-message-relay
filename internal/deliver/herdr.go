@@ -113,22 +113,67 @@ func (h CLIHerdr) Prompt(ctx context.Context, pane, body string) error {
 
 var panePattern = regexp.MustCompile(`^w[0-9A-Za-z]+:p[0-9A-Za-z]+$`)
 
+// canonicalPath 解析符號連結；路徑不存在時退回清理後的字串，避免比較時混用邏輯與實體路徑。
+func canonicalPath(p string) string {
+	if p == "" {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	// 末端可能還不存在（例如剛建立的子目錄）；解析最近的既有祖先後再接回剩餘片段。
+	parts := []string{}
+	for dir := filepath.Clean(p); ; {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return filepath.Clean(p)
+		}
+		parts = append([]string{filepath.Base(dir)}, parts...)
+		dir = parent
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(append([]string{resolved}, parts...)...)
+		}
+	}
+}
+
+func uniquePaths(paths ...string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, p := range paths {
+		if p != "" && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// cwdBelongsToRole 判斷 cwd 是否落在角色容器底下的本角色；容器本身或其他角色都不算。
+func cwdBelongsToRole(cwd string, rolesDirs []string, role string) bool {
+	for _, rolesDir := range rolesDirs {
+		rel, err := filepath.Rel(rolesDir, cwd)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		if rel == "." {
+			return false
+		}
+		return strings.SplitN(rel, string(filepath.Separator), 2)[0] == role
+	}
+	return true
+}
+
 // seatRank 由 herdr agent list 的 cwd／foreground_cwd 判斷座位歸屬：
 // cwd 完全相符（3）> cwd 在角色目錄下（2）> foreground_cwd 完全相符（1）。
 // cwd 已落在其他角色目錄時一律排除，避免以前景程序認領別人的訊息。
-func seatRank(a Agent, rolesDir, role, logical, physical string) int {
-	cwd := strings.TrimSuffix(a.CWD, string(filepath.Separator))
-	foreground := strings.TrimSuffix(a.ForegroundCWD, string(filepath.Separator))
-	if rel, err := filepath.Rel(rolesDir, cwd); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
-		if owner := strings.SplitN(rel, string(filepath.Separator), 2)[0]; owner != role {
-			return 0
-		}
+func seatRank(a Agent, role string, rolesDirs, bases []string) int {
+	cwd := canonicalPath(a.CWD)
+	foreground := canonicalPath(a.ForegroundCWD)
+	if !cwdBelongsToRole(cwd, rolesDirs, role) {
+		return 0
 	}
 	rank := 0
-	for _, base := range []string{logical, physical} {
-		if base == "" {
-			continue
-		}
+	for _, base := range bases {
 		switch {
 		case cwd == base:
 			rank = max(rank, 3)
@@ -136,8 +181,8 @@ func seatRank(a Agent, rolesDir, role, logical, physical string) int {
 			rank = max(rank, 2)
 		}
 	}
-	for _, base := range []string{logical, physical} {
-		if base != "" && foreground == base {
+	for _, base := range bases {
+		if foreground == base {
 			rank = max(rank, 1)
 		}
 	}
@@ -146,16 +191,14 @@ func seatRank(a Agent, rolesDir, role, logical, physical string) int {
 
 // ResolveAgent 以 herdr agent list 解析角色座位；較精確的比對優先，仍要求唯一。
 func ResolveAgent(root, role string, agents []Agent) (Agent, error) {
-	logical := filepath.Join(root, "角色", role)
-	physical, err := filepath.EvalSymlinks(logical)
-	if err != nil {
-		physical = ""
-	}
-	rolesDir := filepath.Dir(logical)
+	roleDir := filepath.Join(canonicalPath(root), "角色", role)
+	bases := uniquePaths(roleDir, canonicalPath(roleDir))
+	rolesDir := filepath.Dir(roleDir)
+	rolesDirs := uniquePaths(rolesDir, canonicalPath(rolesDir))
 	best := 0
 	matches := []Agent{}
 	for _, a := range agents {
-		rank := seatRank(a, rolesDir, role, logical, physical)
+		rank := seatRank(a, role, rolesDirs, bases)
 		if rank == 0 {
 			continue
 		}
