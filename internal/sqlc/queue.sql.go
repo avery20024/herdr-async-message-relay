@@ -161,6 +161,23 @@ func (q *Queries) ClaimMessage(ctx context.Context, arg ClaimMessageParams) (int
 	return result.RowsAffected()
 }
 
+const claimPendingMessage = `-- name: ClaimPendingMessage :execrows
+UPDATE messages SET state = 'dispatching', batch_id = ? WHERE id = ? AND state IN ('queued','uncertain')
+`
+
+type ClaimPendingMessageParams struct {
+	BatchID sql.NullString `json:"batch_id"`
+	ID      string         `json:"id"`
+}
+
+func (q *Queries) ClaimPendingMessage(ctx context.Context, arg ClaimPendingMessageParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, claimPendingMessage, arg.BatchID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countStates = `-- name: CountStates :many
 SELECT state, COUNT(*) AS count FROM messages GROUP BY state
 `
@@ -323,6 +340,92 @@ func (q *Queries) HeadMessages(ctx context.Context, arg HeadMessagesParams) ([]M
 			&i.State,
 			&i.BatchID,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const headPendingMessages = `-- name: HeadPendingMessages :many
+SELECT seq, id, idempotency_key, sender, recipient, body, created_at, state, batch_id FROM messages
+WHERE recipient = ?1 AND state IN ('queued','uncertain')
+  AND (state = 'queued' OR (SELECT COUNT(*) FROM batch_members WHERE message_id = messages.id) < CAST(?2 AS INTEGER))
+ORDER BY seq LIMIT ?3
+`
+
+type HeadPendingMessagesParams struct {
+	Recipient   string `json:"recipient"`
+	MaxAttempts int64  `json:"max_attempts"`
+	PageLimit   int64  `json:"page_limit"`
+}
+
+func (q *Queries) HeadPendingMessages(ctx context.Context, arg HeadPendingMessagesParams) ([]Message, error) {
+	rows, err := q.db.QueryContext(ctx, headPendingMessages, arg.Recipient, arg.MaxAttempts, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.Seq,
+			&i.ID,
+			&i.IdempotencyKey,
+			&i.Sender,
+			&i.Recipient,
+			&i.Body,
+			&i.CreatedAt,
+			&i.State,
+			&i.BatchID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const heldMessages = `-- name: HeldMessages :many
+SELECT seq, id FROM messages
+WHERE recipient = ?1 AND state = 'uncertain'
+  AND (SELECT COUNT(*) FROM batch_members WHERE message_id = messages.id) >= CAST(?2 AS INTEGER)
+ORDER BY seq
+`
+
+type HeldMessagesParams struct {
+	Recipient   string `json:"recipient"`
+	MaxAttempts int64  `json:"max_attempts"`
+}
+
+type HeldMessagesRow struct {
+	Seq int64  `json:"seq"`
+	ID  string `json:"id"`
+}
+
+func (q *Queries) HeldMessages(ctx context.Context, arg HeldMessagesParams) ([]HeldMessagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, heldMessages, arg.Recipient, arg.MaxAttempts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []HeldMessagesRow{}
+	for rows.Next() {
+		var i HeldMessagesRow
+		if err := rows.Scan(&i.Seq, &i.ID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -578,6 +681,33 @@ func (q *Queries) PendingRecipients(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const recoverBatch = `-- name: RecoverBatch :execrows
+UPDATE batches SET state = 'uncertain', updated_at = ?, detail = ? WHERE id = ? AND state = 'dispatching'
+`
+
+type RecoverBatchParams struct {
+	UpdatedAt int64  `json:"updated_at"`
+	Detail    string `json:"detail"`
+	ID        string `json:"id"`
+}
+
+func (q *Queries) RecoverBatch(ctx context.Context, arg RecoverBatchParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, recoverBatch, arg.UpdatedAt, arg.Detail, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const recoverBatchMessages = `-- name: RecoverBatchMessages :exec
+UPDATE messages SET state = 'uncertain' WHERE batch_id = ? AND state = 'dispatching'
+`
+
+func (q *Queries) RecoverBatchMessages(ctx context.Context, batchID sql.NullString) error {
+	_, err := q.db.ExecContext(ctx, recoverBatchMessages, batchID)
+	return err
+}
+
 const recoverBatches = `-- name: RecoverBatches :exec
 UPDATE batches SET state = 'uncertain', updated_at = ?, detail = 'daemon restarted during dispatch; inspect target before resolving'
 WHERE state = 'dispatching'
@@ -637,4 +767,24 @@ UPDATE messages SET state = 'submitted' WHERE batch_id = ? AND state = 'uncertai
 func (q *Queries) ResolveMessagesSubmitted(ctx context.Context, batchID sql.NullString) error {
 	_, err := q.db.ExecContext(ctx, resolveMessagesSubmitted, batchID)
 	return err
+}
+
+const supersedeBatchIfSettled = `-- name: SupersedeBatchIfSettled :execrows
+UPDATE batches SET state = 'resolved_retry', updated_at = ?, detail = ?
+WHERE batches.id = ? AND batches.state = 'uncertain'
+  AND NOT EXISTS (SELECT 1 FROM messages WHERE batch_id = batches.id AND messages.state = 'uncertain')
+`
+
+type SupersedeBatchIfSettledParams struct {
+	UpdatedAt int64  `json:"updated_at"`
+	Detail    string `json:"detail"`
+	ID        string `json:"id"`
+}
+
+func (q *Queries) SupersedeBatchIfSettled(ctx context.Context, arg SupersedeBatchIfSettledParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, supersedeBatchIfSettled, arg.UpdatedAt, arg.Detail, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

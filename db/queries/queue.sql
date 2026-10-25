@@ -88,3 +88,29 @@ SELECT DISTINCT sender FROM messages ORDER BY sender;
 
 -- name: HistoricalRecipients :many
 SELECT DISTINCT recipient FROM messages ORDER BY recipient;
+
+-- name: HeadPendingMessages :many
+SELECT * FROM messages
+WHERE recipient = sqlc.arg(recipient) AND state IN ('queued','uncertain')
+  AND (state = 'queued' OR (SELECT COUNT(*) FROM batch_members WHERE message_id = messages.id) < CAST(sqlc.arg(max_attempts) AS INTEGER))
+ORDER BY seq LIMIT sqlc.arg(page_limit);
+
+-- name: HeldMessages :many
+SELECT seq, id FROM messages
+WHERE recipient = sqlc.arg(recipient) AND state = 'uncertain'
+  AND (SELECT COUNT(*) FROM batch_members WHERE message_id = messages.id) >= CAST(sqlc.arg(max_attempts) AS INTEGER)
+ORDER BY seq;
+
+-- name: ClaimPendingMessage :execrows
+UPDATE messages SET state = 'dispatching', batch_id = ? WHERE id = ? AND state IN ('queued','uncertain');
+
+-- name: SupersedeBatchIfSettled :execrows
+UPDATE batches SET state = 'resolved_retry', updated_at = ?, detail = ?
+WHERE batches.id = ? AND batches.state = 'uncertain'
+  AND NOT EXISTS (SELECT 1 FROM messages WHERE batch_id = batches.id AND messages.state = 'uncertain');
+
+-- name: RecoverBatch :execrows
+UPDATE batches SET state = 'uncertain', updated_at = ?, detail = ? WHERE id = ? AND state = 'dispatching';
+
+-- name: RecoverBatchMessages :exec
+UPDATE messages SET state = 'uncertain' WHERE batch_id = ? AND state = 'dispatching';

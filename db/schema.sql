@@ -32,3 +32,4 @@ CREATE TABLE IF NOT EXISTS batch_members (
 );
 CREATE INDEX IF NOT EXISTS messages_recipient_seq ON messages(recipient, seq);
 CREATE INDEX IF NOT EXISTS batches_recipient_time ON batches(recipient, created_at);
+CREATE INDEX IF NOT EXISTS batch_members_message ON batch_members(message_id);

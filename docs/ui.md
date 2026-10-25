@@ -106,7 +106,7 @@ The UI uses only GET requests and rejects redirects, oversized responses, root m
 
 ## Limits and validation
 
-History and filter choices are currently read from existing indexes; no new indexes are installed. Many distinct historical roles or repeatedly refreshing a very deep selection can be expensive. Requests have deadlines and failure retains the old view; large-scale performance is not yet benchmarked. UI rows accumulate only as history is paged; a refresh rebuilds through the selected message rather than preloading all history. Extremely large responses are rejected (24 MiB per page).
+History and filter choices are currently read from existing indexes; the UI adds no index of its own. The relay schema does install `batch_members(message_id)` so retry-attempt lookups stay indexed as history grows. Many distinct historical roles or repeatedly refreshing a very deep selection can be expensive. Requests have deadlines and failure retains the old view; large-scale performance is not yet benchmarked. UI rows accumulate only as history is paged; a refresh rebuilds through the selected message rather than preloading all history. Extremely large responses are rejected (24 MiB per page).
 
 Bubble Tea is pinned to `charm.land/bubbletea/v2 v2.1.0`, Bubbles to `charm.land/bubbles/v2 v2.2.1`, and Lip Gloss to `charm.land/lipgloss/v2 v2.0.6`; terminal-width and terminal helpers are pinned through go.mod/go.sum. `scripts/notices.py` includes their licenses in release packaging automatically. The UI ships with v0.5.0; building from source and upgrading a running service remain separate operations.
 

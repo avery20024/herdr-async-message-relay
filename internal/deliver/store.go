@@ -108,24 +108,49 @@ func (s *Store) Recover(ctx context.Context) error {
 	})
 }
 
+// Claim 將 queued 或 unsure 訊息重新包進新批次；舊的 unsure 批次會標為已重試，保留成員紀錄供追溯。
 func (s *Store) Claim(ctx context.Context, b sqlc.Batch, messages []sqlc.Message) error {
 	return s.transaction(ctx, func(q *sqlc.Queries) error {
 		if err := q.InsertBatch(ctx, sqlc.InsertBatchParams{ID: b.ID, Recipient: b.Recipient, Pane: b.Pane, BaselineSeq: b.BaselineSeq, CreatedAt: b.CreatedAt, UpdatedAt: b.CreatedAt}); err != nil {
 			return err
 		}
+		previous := map[string]bool{}
 		for i, m := range messages {
-			n, err := q.ClaimMessage(ctx, sqlc.ClaimMessageParams{ID: m.ID, BatchID: sql.NullString{String: b.ID, Valid: true}})
+			if m.State == "uncertain" && m.BatchID.Valid {
+				previous[m.BatchID.String] = true
+			}
+			n, err := q.ClaimPendingMessage(ctx, sqlc.ClaimPendingMessageParams{ID: m.ID, BatchID: sql.NullString{String: b.ID, Valid: true}})
 			if err != nil {
 				return err
 			}
 			if n != 1 {
-				return errors.New("message no longer queued")
+				return errors.New("message is no longer pending")
 			}
 			if err := q.InsertBatchMember(ctx, sqlc.InsertBatchMemberParams{BatchID: b.ID, MessageID: m.ID, Position: int64(i + 1)}); err != nil {
 				return err
 			}
 		}
+		// 先完成搬移再判斷：舊批次若仍有被保留的 uncertain 成員，維持 uncertain 以便人工 resolve。
+		for id := range previous {
+			if _, err := q.SupersedeBatchIfSettled(ctx, sqlc.SupersedeBatchIfSettledParams{ID: id, UpdatedAt: time.Now().UnixMilli(), Detail: "superseded by retry batch " + b.ID}); err != nil {
+				return err
+			}
+		}
 		return nil
+	})
+}
+
+// SupersedeStale 將中斷已久、仍停在 dispatching 的批次就地轉為 unsure，讓後續掃描可以重試。
+func (s *Store) SupersedeStale(ctx context.Context, id string) error {
+	return s.transaction(ctx, func(q *sqlc.Queries) error {
+		n, err := q.RecoverBatch(ctx, sqlc.RecoverBatchParams{ID: id, UpdatedAt: time.Now().UnixMilli(), Detail: "dispatch observation did not finish; retried as uncertain"})
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return errors.New("batch is not dispatching")
+		}
+		return q.RecoverBatchMessages(ctx, sql.NullString{String: id, Valid: true})
 	})
 }
 

@@ -48,3 +48,27 @@ func TestRenderLargestAcceptedBodyFitsMinimumBatch(t *testing.T) {
 		t.Fatalf("maximum accepted body exceeds minimum batch bytes: %d", n)
 	}
 }
+
+func TestRenderBatchRetryNoticeOnlyForUncertain(t *testing.T) {
+	messages := []sqlc.Message{
+		{ID: "msg-queued", Sender: "dev", Recipient: "gm", Body: "never sent", State: "queued"},
+		{ID: "msg-retry", Sender: "reviewer", Recipient: "gm", Body: "maybe sent", State: "uncertain"},
+	}
+	text := RenderBatch("batch-mix", messages)
+	if !strings.HasPrefix(text, "[hrelay | batch batch-mix | 2 messages]\nRETRY: 1 of 2 were sent earlier") {
+		t.Fatal(text)
+	}
+	if strings.Count(text, "RETRY:") != 1 || !strings.Contains(text, "act on each message ID at most once") {
+		t.Fatal(text)
+	}
+	if !strings.Contains(text, "id msg-retry | reviewer -> gm | 10 bytes | retried: may already have been delivered ---") {
+		t.Fatal(text)
+	}
+	if strings.Contains(text, "id msg-queued | dev -> gm | 10 bytes |") {
+		t.Fatal("normal message marked as retry")
+	}
+	normal := RenderBatch("batch-new", messages[:1])
+	if strings.Contains(normal, "RETRY") || strings.Contains(normal, "retried") {
+		t.Fatal(normal)
+	}
+}

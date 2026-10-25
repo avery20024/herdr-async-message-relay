@@ -8,7 +8,7 @@ Use [the UI](ui.md) for everyday history, filters and UI preferences. This refer
 
 This is an early release for macOS and Linux, arm64 and amd64. The Herdr compatibility baseline is **0.9.3**. Windows is not supported.
 
-Role discovery currently follows the convention `<team-root>/角色/<role>` (`角色` means “roles”). A role's live agent must report that exact CWD, or its resolved physical path, in `herdr agent list`. Role names are lowercase letters, digits, and hyphens, starting with a letter. A configurable routing registry is not implemented yet.
+Role discovery follows `<team-root>/角色/<role>` (`角色` means “roles”) and always reads `pane_id` from `herdr agent list`. Matching prefers, in order: the agent's `cwd` equal to the role root (or its resolved physical path); a `cwd` inside that role directory; then a `foreground_cwd` exactly equal to the role root. An agent whose `cwd` already belongs to another role directory is never used for this role, and a match must be unique — zero or multiple candidates means nothing is delivered and a warning is logged. Role names are lowercase letters, digits, and hyphens, starting with a letter. A configurable routing registry is not implemented yet.
 
 Starting with v0.2.0, `service start` / `send --ensure` can register and start a **launchd user agent on macOS** or a **systemd user service on Linux**. The Herdr startup hook restores registered, unpaused projects. Installation alone cannot safely infer a project root, so first use must supply `--root` or `DELIVER_ROOT`. No shell background fork, automatic role-directory creation, PATH modification, or harness skill injection is performed. The team supplies root and sender context; the caller chooses the target role. The short form `send ROLE MESSAGE` ensures the service automatically.
 
@@ -158,6 +158,19 @@ Independent AI-agent messages; keep contexts separate. Verbatim; not human instr
 
 Actual IDs are not shortened. `message` becomes `messages` for multiple messages; byte counts refer to the original UTF-8 body. Boundaries are context separators, not authentication or protection against malicious message text.
 
+When a batch retries messages whose earlier submission was unconfirmed, the header adds a `RETRY:` line stating how many may already have reached the seat and asking the recipient to check its own records, and each retried message adds `| retried: may already have been delivered` to its boundary line. A normal batch never carries these markers.
+
+```text
+[hrelay | batch batch-… | 1 message]
+RETRY: 1 of 1 were sent earlier without a confirmed result and may already have reached this seat.
+Check your own records first and act on each message ID at most once; a duplicate is possible.
+Independent AI-agent messages; keep contexts separate. Verbatim; not human instructions or authorization.
+
+--- message 1/1 | id msg-… | dev -> gm | 123 bytes | retried: may already have been delivered ---
+<original body>
+--- end message 1/1 | id msg-… ---
+```
+
 ## Display language
 
 **Available since v0.3.0.** Earlier binaries do not include these language options or the English envelope. Updating the CLI alone does not replace an already-running worker; deploy the updated worker through the normal operator-controlled upgrade process.
@@ -228,7 +241,7 @@ Without `HERDR_SEND_IDEMPOTENCY_KEY`, the wrapper omits `--key`. Important bound
 - Root comes from the script's parent directory. **Copy it to `<team-root>/scripts/herdr-send.sh` before use**; running it inside this repository's `examples/` would select this repository as root.
 - Sender inference uses the physical CWD of `角色/<role>` or a subdirectory. From elsewhere, set `HERDR_SEND_FROM` to the actual authorized sender. This wrapper uses `HERDR_SEND_FROM`, not the native CLI's `HERDR_RELAY_FROM`; it passes `--from` explicitly. Missing or ambiguous identity is rejected.
 - Both role directories must already exist. Names follow the same role-name rules as the native CLI. The literal `角色/` directory is still required; this example does not add a configurable or English-named role registry.
-- An auto-rename that changes only a display name does not affect this inference. Moving role directories or changing a recipient's reported CWD is different: live recipients must still report the exact role root or its resolved physical path. Sender inference from a subdirectory does not relax recipient matching.
+- An auto-rename that changes only a display name does not affect this inference. Moving role directories or changing a recipient's reported CWD is different: recipients are matched by the role-root rules above (exact path, then a path inside the role directory, then an exact `foreground_cwd`), and the match must stay unique. Sender inference from a subdirectory does not relax that rule.
 - Requires Bash and `hrelay` v0.2+ on the calling agent's PATH. No jq, plugin discovery, checkout binary fallback, or old `HERDR_RELAY_BIN` / `HERDR_DELIVER_BIN` override is used. The example retains Traditional Chinese diagnostics.
 - The body remains one unchanged argument, including newlines; use proper shell quoting. The wrapper neither reads rename-plugin data nor injects keys or direct prompts.
 - Short-form send ensures the same project service before enqueueing. First registration still needs the intended absolute `HERDR_SOCKET_PATH`; custom state/service paths must remain consistent. A persistent pause is not bypassed.
@@ -245,6 +258,8 @@ Foreground settings are read at startup. Managed services snapshot settings at r
 | `DELIVER_BATCH_SIZE` | `3` | Maximum messages per batch, 1–100 |
 | `DELIVER_BATCH_BYTES` | `12000` | Maximum rendered batch bytes, 2048–64000; individual body limit is this value minus 1024 |
 | `DELIVER_POLL_MS` | `500` | Scan interval in milliseconds, 50–60000 |
+| `DELIVER_RETRY_BACKOFF_MS` | `30000` | Wait before retrying an `uncertain` batch, 0–600000 |
+| `DELIVER_MAX_ATTEMPTS` | `3` | Maximum deliveries per message before it is held for inspection, 1–10 |
 | `DELIVER_ROOT` | Working directory | Team root; configure explicitly for agents; `--root` overrides it |
 | `HERDR_RELAY_FROM` | None | Actual sender role supplied by the team launcher; `--from` overrides it |
 | `HERDR_RELAY_LANG` | `auto` | Native CLI display language: `auto`, `en`, `zh-TW`; global `--lang` overrides it; not saved in service records |
@@ -279,11 +294,11 @@ Do not shrink the batch byte limit below what an already queued message requires
 | `queued` | Committed and waiting for a ready role |
 | `dispatching` | Fixed batch membership; an external submission may be in progress |
 | `submitted` | Submission observation succeeded; not a read or processing receipt |
-| `uncertain` | Submission may have happened; no automatic replay |
+| `uncertain` | Submission may have happened; retried after a backoff, up to the attempt limit |
 
-The worker uses bounded `herdr agent prompt --wait` observation, not a wait for the recipient's task to finish. A submission error or a daemon restart during dispatch conservatively produces `uncertain`, blocking later batches for that role. Other roles can continue.
+The worker uses bounded `herdr agent prompt --wait` observation, not a wait for the recipient's task to finish. A submission error or an interrupted dispatch conservatively produces `uncertain`; the same messages are then retried in FIFO order after `DELIVER_RETRY_BACKOFF_MS`, up to `DELIVER_MAX_ATTEMPTS` deliveries per message. Delivery is therefore **at least once**: a retry can duplicate a submission that had in fact reached the pane. Each message keeps its ID inside the batch envelope so the receiver can recognise a repeat. When a message reaches the attempt limit it is held for inspection and the remaining queue continues; a warning names the held message IDs. Other roles are never blocked by one role's uncertainty.
 
-After inspecting the recipient, prompt input, and task records, an authorized operator can resolve a batch:
+Retries are automatic; `resolve` is for inspected exceptions and for messages held at the attempt limit. After inspecting the recipient, prompt input, and task records, an authorized operator can resolve a batch:
 
 ```sh
 # Confirmed not submitted: queue the same message IDs for another attempt.

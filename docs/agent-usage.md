@@ -132,7 +132,7 @@ Alternatively prefix the command with `hrelay --root /absolute/path/to/team`. Se
 - `restart`: stop and start under the same lifecycle lock, with bounded shutdown confirmation. Works for running or paused managed services and can initialize an inactive unregistered project. If shutdown fails, do not start another worker. Unmanaged listeners are refused.
 - `status`: display the same readiness/registration information as `service status`; unregistered projects are reported as such.
 
-The original `service start|stop|restart|status` commands remain supported. These are per-project controls, not a global kill switch. Restart may interrupt an in-flight dispatch, so inspect `uncertain` instead of replaying messages automatically.
+The original `service start|stop|restart|status` commands remain supported. These are per-project controls, not a global kill switch. Restart may interrupt an in-flight dispatch. A batch whose submission cannot be observed becomes `uncertain` and is retried automatically after `DELIVER_RETRY_BACKOFF_MS`, up to `DELIVER_MAX_ATTEMPTS` deliveries per message, so delivery is at least once; retried batches say `RETRY:` in the envelope and ask the recipient to check for duplicates. Messages held at the attempt limit need an explicit, evidence-backed `resolve`.
 
 ## Lifecycle ownership
 
