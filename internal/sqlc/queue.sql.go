@@ -68,6 +68,82 @@ func (q *Queries) BoundProject(ctx context.Context) (string, error) {
 	return root, err
 }
 
+const browseMessages = `-- name: BrowseMessages :many
+SELECT messages.seq, messages.id, messages.idempotency_key, messages.sender, messages.recipient, messages.body, messages.created_at, messages.state, messages.batch_id, batches.state AS batch_state,
+       batches.updated_at AS batch_updated_at, batches.detail AS batch_detail
+FROM messages LEFT JOIN batches ON batches.id = messages.batch_id
+WHERE (?1 = 0 OR messages.seq < ?1)
+  AND (?2 = '' OR messages.sender = ?2)
+  AND (?3 = '' OR messages.recipient = ?3)
+  AND (?4 = '' OR messages.state = ?4)
+ORDER BY messages.seq DESC LIMIT ?5
+`
+
+type BrowseMessagesParams struct {
+	BeforeSeq       interface{} `json:"before_seq"`
+	SenderFilter    interface{} `json:"sender_filter"`
+	RecipientFilter interface{} `json:"recipient_filter"`
+	StateFilter     interface{} `json:"state_filter"`
+	PageLimit       int64       `json:"page_limit"`
+}
+
+type BrowseMessagesRow struct {
+	Seq            int64          `json:"seq"`
+	ID             string         `json:"id"`
+	IdempotencyKey string         `json:"idempotency_key"`
+	Sender         string         `json:"sender"`
+	Recipient      string         `json:"recipient"`
+	Body           string         `json:"body"`
+	CreatedAt      int64          `json:"created_at"`
+	State          string         `json:"state"`
+	BatchID        sql.NullString `json:"batch_id"`
+	BatchState     sql.NullString `json:"batch_state"`
+	BatchUpdatedAt sql.NullInt64  `json:"batch_updated_at"`
+	BatchDetail    sql.NullString `json:"batch_detail"`
+}
+
+func (q *Queries) BrowseMessages(ctx context.Context, arg BrowseMessagesParams) ([]BrowseMessagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, browseMessages,
+		arg.BeforeSeq,
+		arg.SenderFilter,
+		arg.RecipientFilter,
+		arg.StateFilter,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BrowseMessagesRow{}
+	for rows.Next() {
+		var i BrowseMessagesRow
+		if err := rows.Scan(
+			&i.Seq,
+			&i.ID,
+			&i.IdempotencyKey,
+			&i.Sender,
+			&i.Recipient,
+			&i.Body,
+			&i.CreatedAt,
+			&i.State,
+			&i.BatchID,
+			&i.BatchState,
+			&i.BatchUpdatedAt,
+			&i.BatchDetail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const claimMessage = `-- name: ClaimMessage :execrows
 UPDATE messages SET state = 'dispatching', batch_id = ? WHERE id = ? AND state = 'queued'
 `
@@ -250,6 +326,60 @@ func (q *Queries) HeadMessages(ctx context.Context, arg HeadMessagesParams) ([]M
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const historicalRecipients = `-- name: HistoricalRecipients :many
+SELECT DISTINCT recipient FROM messages ORDER BY recipient
+`
+
+func (q *Queries) HistoricalRecipients(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, historicalRecipients)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var recipient string
+		if err := rows.Scan(&recipient); err != nil {
+			return nil, err
+		}
+		items = append(items, recipient)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const historicalSenders = `-- name: HistoricalSenders :many
+SELECT DISTINCT sender FROM messages ORDER BY sender
+`
+
+func (q *Queries) HistoricalSenders(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, historicalSenders)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var sender string
+		if err := rows.Scan(&sender); err != nil {
+			return nil, err
+		}
+		items = append(items, sender)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

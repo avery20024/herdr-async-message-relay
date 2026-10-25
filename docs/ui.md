@@ -1,0 +1,111 @@
+# Read-only message history UI (development)
+
+`hrelay ui` is a development feature, **not included in released v0.4.0 binaries**. Both the CLI and the running worker must support the new history API. Updating the executable does not upgrade an existing worker. Installation and service upgrades are separate operations; the UI never performs them.
+
+```sh
+hrelay --root /absolute/team ui
+hrelay --lang zh-TW --root /absolute/team ui
+hrelay help ui
+```
+
+## Layout and controls
+
+The outer title shows the canonical team directory name; details show the full path. A response for another root is rejected. Six columns show sender, stored time, message state, a one-line body summary, recipient, and delivery time. History includes all four current states and is ordered by descending persistent sequence, not by a translated date string.
+
+- All usable sizes keep a full-width history list above and metadata/body below. The lower half allocates 40% of its available width to metadata on the left and 60% to message body on the right (after excluding the frame and center separator; rounding goes to the body). The frame and instance name remain. At 100 columns or wider the list is the original six-column table. Below 100 columns it becomes two-line message cards, avoiding the low-density six-column table at 74–99 columns; there is no phone-sized 74-column enlargement barrier. The practical minimum is 20 × 10 cells; below that the size notice still permits q/Ctrl+C to exit.
+- The first row is selected by default. `j`/`k` or arrows select rows. `u`/`d` move the table viewport and selection up/down by half its visible data-row count (minimum one), keeping the selected row visible; moving beyond the loaded tail fetches another page. Selection moves by the same number of rows so its screen position is retained except at history boundaries.
+- `U`/`D` (Shift+u/d) scroll only the bottom-right body by one visible page; these keys do not change list selection or scroll metadata. Selecting a different message resets body scroll to the top. There is no pane focus switching or implicit key-target switching.
+- The bottom-left pane contains all non-body message fields, root and timestamp/batch evidence. Long values wrap rather than ellipsize. `[` pages this metadata up and `]` pages it down by one visible page, independently of the list and body. Every wrapped metadata line is reachable even at 20 × 10; no data row is replaced with an overflow warning. Both lower headings display the first visible **line** and total lines, not a page count. Selecting a new message or applying different filters resets both offsets; refreshing the same ID preserves both, clamped when content/size changes. Compact help keeps all three navigation groups visible; `^FPRW` means four **independent** shortcuts Ctrl+F, Ctrl+P, Ctrl+R, Ctrl+W, not a multi-letter chord.
+- `Ctrl+F` opens filters. Up/down chooses sender, recipient or state; left/right cycles a single value or All. `d` clears only the selected draft field; `P` (Shift+P) clears all three draft fields. Neither applies or fetches until `Enter`; `Esc` discards the draft. `Enter` applies the combined AND filter. Keys do not manipulate the table while the dialog is open. `Ctrl+C` always exits.
+- On the main screen `P` (Shift+P, **not** Ctrl+P) clears all applied filters and loads the unfiltered first page, resetting selection, cursor and both lower offsets. An old in-flight filtered request is cancelled and cannot override the reset. If already unfiltered this is a no-op, not an extra refresh. `D` retains body-page-down in the main screen and does not clear filters. Initial filters are All. This follows the confirmed all-history default; the exact prototype presentation remains adjustable.
+- `Ctrl+P` opens Preferences (UI language/theme), and `Ctrl+R` reloads the shared preferences without fetching messages. See below for persistence, draft and error behavior.
+- Refresh is manual by default: `r` refreshes. `Ctrl+W` toggles automatic refresh every second, shown in the bottom status line; pressing it again stops periodic refresh.
+- Refresh preserves the selected message ID and its detail scroll, loading successive pages down to the selected sequence when necessary. If the message no longer matches the filters, selection moves to the first result with a notice. This fallback is explicitly documented for prototype evaluation.
+- No overlapping request is started while a refresh/page load is running. A filter change cancels the old request; stale results cannot replace a newer filter. Each overall fetch has a ten-second deadline; each socket request has a five-second deadline.
+- On failure, the last successfully loaded page remains visible with **DATA NOT UPDATED** (below 40 columns: **STALE**, or **未更新** in Traditional Chinese, fully visible in the title). These labels all mean that old data is still shown, not that delivery succeeded. `r` retries; automatic mode keeps attempting once per second. If a fetch is already running, that tick is skipped.
+- `?` opens a concise keyboard-shortcut list from the main screen, filters or Preferences; `Esc` or `?` closes help and returns to that screen without applying/discarding its draft. The single list orders related main actions together without section headings, repeated dialog navigation or a separate help-screen key list; there are no mouse/edit/copy shortcuts. Help is a centered floating dialog over the existing main screen or dialog. Its requested outer size is 62 columns × 27 rows, including borders, with margins on normal screens; the actions are listed once in a single column. Smaller terminals shrink the dialog and wrap descriptions. The 27-row height is retained even when the list is short, with blank viewport rows filling the space. Smaller terminals reduce the size to the available inner frame and overflow remains scrollable. The title uses the theme's normal text color (not a fixed white or accent color) with bold text (NO_COLOR omits the foreground color) and one blank row beneath it, without changing the requested size or bottom hint position. Every cell of the dialog, including borders, padding, whitespace and styled text, uses the same dialog background while foreground colors/bold remain distinct (NO_COLOR remains colorless). Its footer is pinned to the last interior row immediately above the bottom border and contains only muted `ESC close` (`ESC 退出`); the outer footer is blank rather than repeating help controls or counts. The main frame and underlying data remain visible around it. All entries remain reachable: `j/k` or up/down scroll help, `u/d` or PgUp/PgDn page help, and `g/G` or Home/End jump to its top/bottom. These help-only navigation keys do not move the selected message or either lower pane. Main/dialog actions are blocked while help is open. Existing auto refresh continues; `Ctrl+R` still reloads settings only (and resets an underlying Preferences draft on success, as usual). Opening/scrolling/closing help itself does not fetch messages or save preferences.
+- `q` on the main screen or `Ctrl+C` anywhere exits the UI, restores the terminal and does not stop the relay. In help, q is ignored; close with `Esc` or `?`. Below the minimum size, the size notice still accepts q regardless of the underlying screen. Main-screen `Esc` does not exit.
+
+## Phone layout
+
+Below 100 columns, each complete message occupies two lines (no table column heading):
+
+```text
+▌ dev → gm           ○ queued
+  06:40  Fix verified, please review…
+```
+
+The first line reserves space for both sender and recipient plus state. Extremely narrow cards (inner width below 32) use `○Q` (queued), `◐D` (dispatching), `✓S` (submitted), `▲?` (uncertain); the raw state remains in metadata. The second line uses Asia/Taipei `HH:mm` and a whitespace-normalized summary. Full dates/seconds, delivery time and all evidence remain in independently scrollable metadata, and the original body stays unchanged in the right pane. Desktop summaries also normalize whitespace; this never rewrites stored data.
+
+`j/k` still selects one **message**. `u/d` moves viewport and selection by half the number of fully visible **cards**, rounded down, at least one; it does not count each text line as a message. An unmatched odd list row stays blank rather than displaying half a card. Cursor paging, filters and same-ID refresh semantics are unchanged. Resizing across the 100-column breakpoint preserves the selected ID and clamps the independent offsets.
+
+Phone metadata uses shorter labels (`From`/`To`, `Time`, `Delivery`, `ID`, `Seq`, `Key`, `Path` and their Traditional Chinese equivalents). Compact lower headings retain first-visible-line/total-lines counters; the smallest panes omit the verbose section labels. No fields are removed. The split remains 40/60, without new inner padding or focus switching.
+
+Narrow or short filter panels contain a title plus all three fields. The single footer combines a Vim-like mode badge (manual/auto) with key hints; it never needs a second status/help row. The released row goes back to the upper/lower content split. Hint selection first reserves space for the current trailing count, dialog field label, feedback or error, then chooses the longest fitting hint variant. The added `?` must not consume that information simply because a longer variant fills the row. When both truly cannot fit, minimum key hints still take priority and trailing information is shortened; the title always retains the stale warning. In Terminal/default mode manual has a blue badge and auto a green badge; named themes use their emphasis foreground/background pair. NO_COLOR uses bold/reverse plus explicit mode text, not color alone.
+
+Below 40 columns, `M`/`A` stands for manual/one-second automatic refresh. The smallest main-screen footer is `M  jkudUD[]rP^FPRWq?`: j/k select, u/d list half-page, U/D body page, [/] metadata page, r refresh, **P (Shift+P) clear filters**, **^FPRW = Ctrl+F filters / Ctrl+P preferences / Ctrl+R reload config / Ctrl+W auto-refresh**, q quit, **? keyboard shortcuts**. The help dialog shows only muted `ESC close` (`ESC 退出`) at its bottom; overflow remains scrollable without adding those help-only actions to the concise list. Full help explicitly says `P clear filters` / `P 清除篩選`. These are adjacent individual key labels, not a chord. Popup hints compress to `↑↓←→dPEnter Esc?`: navigate, d clear selected draft field, P clear all draft fields, Enter apply, Esc cancel, ? help. Preferences uses `↑↓←→Enter Esc?` (Enter saves). Adjacent key labels trade spaces, not supported actions, for trailing field-label room. Ctrl+C remains available everywhere. The mode badge reserves a spinner cell so busy/idle does not change the help tier (the spinner is omitted in narrow popups to retain all hints). At 20 × 10 one full card and three lines of each detail pane remain visible.
+
+## Preferences and themes
+
+`Ctrl+P` opens Preferences. Up/down chooses UI language or theme, left/right cycles values. `Enter` saves both fields and then applies them to this UI; `Esc` cancels the draft (no disk write). Preferences and filter dialogs are mutually exclusive; q does not exit a dialog, Ctrl+C always exits. No focus switching is added.
+
+Settings are shared by this local OS account across **all team roots / state directories**. The file is `os.UserConfigDir()/hrelay/ui-preferences.json`: on macOS `~/Library/Application Support/hrelay/ui-preferences.json`; on Linux `$XDG_CONFIG_HOME/hrelay/ui-preferences.json` or `~/.config/hrelay/ui-preferences.json`. `HERDR_RELAY_UI_CONFIG=/absolute/file.json` overrides only this path (use a private temporary path for testing).
+
+```json
+{"version": 1, "language": "auto", "theme": "terminal"}
+```
+
+- Language values: `auto`, `en`, `zh-TW`. Auto uses the language resolved from CLI `--lang`, environment and locale. An explicit saved UI language controls **the UI only**, even if `--lang` selected another CLI language; CLI help/errors and global CLI language resolution do not change.
+- Theme values: `terminal` (existing adaptive default), `catppuccin-latte`, `dracula`, `rose-pine` (original dark variant), `vesper`. No file is created merely by launching or reading a missing file.
+- Startup, opening Preferences and `Ctrl+R` load the shared file. Other running UIs do **not** watch it. Ctrl+R changes only local UI language/theme, never refreshes messages or changes selection/filters. In Preferences a successful reload replaces its unsaved draft; in the filter dialog the filter draft is preserved. Opening Preferences reloads before creating its draft, so Esc does not undo that already-loaded external setting.
+- Saved/reloaded feedback is one-shot: the next key operation or actual message fetch (including automatic refresh) clears it and restores counts. Opening Preferences does not leave an automatic reload notice after closing. Popup field-position labels take priority over ordinary notices; configuration/data errors remain visible until their respective recovery succeeds.
+- Saving uses a same-directory temporary file, mode 0600, sync/close and atomic rename; a new dedicated directory is 0700. Concurrent saves are complete snapshots, **last completed save wins**, without merging. Existing parent directory permissions are not changed.
+- Missing file loads defaults. Invalid JSON, duplicate/unknown fields, unsupported versions, invalid values, more than 4 KiB, non-regular files and symlink files/dedicated directories are rejected. Read failure retains current settings and shows `! CFG` in the title; if message data is also stale, `!STALE/CFG` identifies both. Details appear in Preferences / available footer space. Saving failures keep the dialog/draft open and do not apply or claim success. Unreadable or unknown-version files are not silently overwritten: repair the file, then reload before saving.
+
+Named themes use primary, muted and accent text; panel and emphasis backgrounds. Dark themes keep the general canvas **transparent** while applying theme foreground colors; they assume an appropriate dark terminal background. Catppuccin Latte paints **every canvas cell**, including body, whitespace, frame and footer, with theme background wherever there is no panel/emphasis background. Selected rows and emphasis badges use paired contrasting colors. Theme changes never set terminal default colors via OSC, avoiding shell-color changes on exit; NO_COLOR/dumb disables all palette colors.
+
+Official palette sources (adapted to these semantic roles): [Catppuccin Latte](https://catppuccin.com/palette/), [Dracula](https://github.com/dracula/dracula-theme), [Rosé Pine](https://rosepinetheme.com/palette/), [Vesper](https://github.com/raunofreiberg/vesper/blob/main/themes/Vesper-dark-color-theme.json). Palette data is local; changing themes makes no network calls. No worker configuration, DB, relay delivery or guard behavior is modified. The queue remains read-only; only explicit preference saves write the local UI preferences file.
+
+## Styling and components (development)
+
+The interface uses Lip Gloss v2.0.6 for the title, frame, section headings, semantic state colors, selected-row background and rounded filter dialog. Selection also has a `▌` marker and bold/reverse fallback, while states have both symbols and raw codes: `○ queued`, `◐ dispatching`, `✓ submitted`, `▲ uncertain`. Meaning never relies on color alone.
+
+With Terminal/default selected, Bubble Tea requests the terminal background color and adapts the palette for light/dark backgrounds; custom-background panels use a dark fallback when no response is available, but unbacked muted text retains the terminal's default foreground until the background is known (no faint or fixed light-gray assumption on an unknown light background). Until the background is known, all four state styles also use the terminal's default foreground plus bold; the state symbol and text are not painted bright yellow/green on a potentially light background. A background reply restores the existing state palette, subject to NO_COLOR/profile handling. `NO_COLOR` (non-empty), `TERM=dumb`, or an ASCII color profile disables color in model styles. Bubble Tea handles final terminal-profile downsampling. Both lower panes are real Bubbles viewports with default keymaps and mouse handling disabled. The application routes only the established keys; ID-bound offsets remain explicit to preserve refresh/selection semantics. The history table stays custom to retain cursor pagination and viewport/selection control.
+
+A Bubbles spinner animates only during an in-flight history request. Each request has a fresh spinner ID, so cancelled/completed/old ticks cannot start further animation or network requests. Idle/manual mode has no recurring spinner timer. The filter dialog is composed using Lip Gloss cell layers, preserving styled/CJK content outside the panel. All untrusted strings are sanitized **before** styling; only application-generated ANSI is trusted. Named-theme canvas completion uses the already-pinned ultraviolet styled-cell parser to fill missing foreground/background colors without erasing nested selection or popup colors.
+
+Metadata wraps at word/slash boundaries when possible and hard-breaks tokens wider than the pane, so complete content remains reachable with `[`/`]`. Message bodies retain the original visible line breaks and hard-wrapping behavior. The section counters explicitly mean `line n/N`; both title and status counts add `+` with the same meaning: more history can be loaded. The title always marks stale data, with additional detail in the footer when space permits; the warning is not just color. API and dispatch behavior are unchanged.
+
+## Time and evidence
+
+Times use Asia/Taipei (+08:00). The table uses `MM-DD HH:mm`; details include year, seconds and offset. Stored time is when the relay persisted the message, not when a recipient read it.
+
+Only a submitted message whose associated batch has the ordinary `submitted` state uses the batch completion timestamp in the delivery-time column. This is an **automatic submission record**, not an end-to-end delivery/read receipt. A `resolved_submitted` timestamp is shown separately as a **manual confirmation record**, not the original submission time; its delivery-time cell remains `—`. Missing evidence is `—`. Batch detail is included as evidence, never as a command.
+
+Bodies retain their stored values. Only the displayed representation strips ANSI/OSC, control codes and bidi override/isolate controls; summaries replace newlines with spaces and truncate using terminal cell widths. Details preserve visible text and line breaks with wrapping. The selected row has a `▌` marker and a selected background (reverse video without color), so selection does not rely on color alone.
+
+## Read-only history API
+
+The existing private Unix socket adds:
+
+```text
+GET /v1/messages?limit=50&before=123&sender=dev&recipient=gm&state=queued
+```
+
+- `limit`: default 50, range 1–100. The UI requests 50.
+- `before`: optional positive exclusive sequence cursor; omit for the newest page.
+- `sender`, `recipient`, `state`: optional exact AND filters. Empty means All. Unknown historical role values return an empty result, not a role-directory error.
+- States: queued, dispatching, submitted, uncertain. Unknown/duplicate query parameters, invalid cursors and malformed query strings return HTTP 400.
+- Response: canonical `project_root`, `items` (full message and nullable batch evidence), `next_before` (0 at the end), `senders` and `recipients` from all stored history. Nullable batch fields use the existing Go SQL null JSON shape (`String`/`Int64` plus `Valid`).
+- Each page and its choices are read in one transaction; pages are not a cross-request database snapshot. A new insertion does not move an older sequence cursor. Filters may observe state transitions between pages; refresh re-evaluates them.
+- SQL lives in `db/queries/queue.sql` with sqlc output checked in. There is no schema migration or change to dispatch/guard logic.
+
+The UI uses only GET requests and rejects redirects, oversized responses, root mismatch, ignored filters and invalid sequence/cursor order. A worker without the endpoint shows an incompatibility error instead of falling back to the truncated `/v1/status` summary. It does not open a DB, start a service, enqueue, retry, resolve or delete messages.
+
+## Limits and validation
+
+History and filter choices are currently read from existing indexes; no new indexes are installed. Many distinct historical roles or repeatedly refreshing a very deep selection can be expensive. Requests have deadlines and failure retains the old view; large-scale performance is not yet benchmarked. UI rows accumulate only as history is paged; a refresh rebuilds through the selected message rather than preloading all history. Extremely large responses are rejected (24 MiB per page).
+
+Bubble Tea is pinned to `charm.land/bubbletea/v2 v2.1.0`, Bubbles to `charm.land/bubbles/v2 v2.2.1`, and Lip Gloss to `charm.land/lipgloss/v2 v2.0.6`; terminal-width and terminal helpers are pinned through go.mod/go.sum. `scripts/notices.py` includes their licenses in release packaging automatically. No UI release/version bump is implied by this development change.
+
+Tests cover SQL/API pagination beyond 100 rows, filtering, stale results, request cancellation, offline retention, timer generations, English/Traditional Chinese layouts, terminal sequence sanitization and time evidence. POSIX PTY tests build a temporary executable and use a fake private Unix-socket server, checking list half-page, body-page and metadata bracket keys independently, refresh/filter keys, resize, q/Ctrl+C, terminal mode restoration and alternate-screen exit. The fake server is stopped and child process groups are cleaned up. This does not replace native Linux/macOS independent review or a human visual acceptance session.

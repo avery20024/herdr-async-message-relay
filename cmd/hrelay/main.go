@@ -19,6 +19,7 @@ import (
 
 	"github.com/avery20024/herdr-async-message-relay/internal/deliver"
 	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
+	"github.com/avery20024/herdr-async-message-relay/internal/queueui"
 	"github.com/avery20024/herdr-async-message-relay/internal/service"
 )
 
@@ -134,6 +135,11 @@ func run(ctx context.Context, args []string) (err error) {
 	command, rest := global.Arg(0), global.Args()[1:]
 	f := newFlags(command)
 	switch command {
+	case "ui":
+		if len(rest) != 0 {
+			return i18n.NewError("ui takes no arguments")
+		}
+		return queueui.Run(ctx, c, language)
 	case "serve":
 		if len(rest) != 0 {
 			return i18n.NewError("serve takes no arguments")

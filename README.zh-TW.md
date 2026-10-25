@@ -101,6 +101,15 @@ help 辨識遵循一般旗標解析規則：選項放在位置參數前；作為
 
 內容涵蓋送信、查詢、服務管理、CLI 安裝、Herdr 插件 actions、環境設定與安全提醒。`help` 輸出至 stdout；根層 `--help` 輸出至 stderr 並列出全域選項。兩者不要求有效專案、執行中的 relay 或 Herdr socket，也不啟動服務或建立佇列。全域 `--root`／`--lang` 放在子指令前；根目錄依 `--root` → `DELIVER_ROOT` → 當前目錄選擇，不會向上搜尋。
 
+## 訊息歷史 UI（開發中）
+
+開發版本新增 `hrelay ui`：以 Bubble Tea 提供唯讀終端介面，包含完整歷史游標分頁、發件者／收件人／狀態篩選、訊息細節，以及手動或每秒自動刷新。**已發布的 v0.4.0 執行檔不包含 UI**；CLI 與執行中的 worker 都須支援新歷史 API。UI 不會啟動或升級 worker。操作、時間證據與限制見 [UI 文件](docs/ui.md)。
+
+```sh
+hrelay --root /absolute/team ui
+hrelay --lang zh-TW help ui
+```
+
 ## 執行
 
 使用既有團隊根目錄與角色目錄，或建立測試布局：
