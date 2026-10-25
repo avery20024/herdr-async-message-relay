@@ -54,23 +54,24 @@ type Worker struct {
 	wg     sync.WaitGroup
 }
 
-// warnOnce 只在座位解析狀況改變時告警，避免每一輪掃描重複洗版。
-func (w *Worker) warnOnce(role string, err error) {
+// logOnce 依 key 去重，避免每一輪掃描重複寫同一則警告。
+func (w *Worker) logOnce(key, message string, args ...any) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.warned == nil {
 		w.warned = map[string]string{}
 	}
-	if w.warned[role] == err.Error() {
+	signature := message + fmt.Sprint(args...)
+	if w.warned[key] == signature {
 		return
 	}
-	w.warned[role] = err.Error()
-	w.Log.Warn("seat unresolved", "role", role, "error", err)
+	w.warned[key] = signature
+	w.Log.Warn(message, args...)
 }
-func (w *Worker) clearWarn(role string) {
+func (w *Worker) clearWarn(key string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	delete(w.warned, role)
+	delete(w.warned, key)
 }
 
 // Dispatch 同一角色只由一個工作執行；不同角色不因對方忙碌或提交觀測而互等。
@@ -128,28 +129,30 @@ func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 			}
 		}
 	}
-	// 候選同時包含 queued 與待重試的 uncertain，維持 seq FIFO；多取一些以跳過已隔離的訊息。
+	// 候選同時包含 queued 與待重試的 uncertain，維持 seq FIFO；已達重試上限者由查詢排除，不會佔住視窗。
 	limit := int64(max(w.Config.BatchSize*4, 12))
-	messages, err := w.Store.Q.HeadPendingMessages(ctx, sqlc.HeadPendingMessagesParams{Recipient: role, Limit: limit})
+	messages, err := w.Store.Q.HeadPendingMessages(ctx, sqlc.HeadPendingMessagesParams{Recipient: role, MaxAttempts: int64(w.Config.MaxAttempts), PageLimit: limit})
 	if err != nil {
 		return err
 	}
+	held, err := w.Store.Q.HeldMessages(ctx, sqlc.HeldMessagesParams{Recipient: role, MaxAttempts: int64(w.Config.MaxAttempts)})
+	if err != nil {
+		return err
+	}
+	if len(held) > 0 {
+		ids := make([]string, 0, len(held))
+		for _, row := range held {
+			ids = append(ids, row.ID)
+		}
+		w.logOnce("held:"+role, "messages held after retry limit; inspect and resolve manually", "role", role, "messages", strings.Join(ids, ","), "max_attempts", w.Config.MaxAttempts)
+	} else {
+		w.clearWarn("held:" + role)
+	}
 	batch := sqlc.Batch{ID: NewID("batch-"), Recipient: role, Pane: a.Pane, BaselineSeq: *a.Seq, CreatedAt: time.Now().UnixMilli()}
 	chosen := []sqlc.Message{}
-	quarantined := []string{}
 	for _, m := range messages {
 		if len(chosen) == w.Config.BatchSize {
 			break
-		}
-		if m.State == "uncertain" {
-			attempts, err := w.Store.Q.MessageAttempts(ctx, m.ID)
-			if err != nil {
-				return err
-			}
-			if attempts >= int64(w.Config.MaxAttempts) {
-				quarantined = append(quarantined, m.ID)
-				continue
-			}
 		}
 		candidate := append(append([]sqlc.Message{}, chosen...), m)
 		if len(RenderBatch(batch.ID, candidate)) > w.Config.BatchBytes {
@@ -159,9 +162,6 @@ func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 			break
 		}
 		chosen = candidate
-	}
-	if len(quarantined) > 0 {
-		w.Log.Warn("messages held after retry limit; inspect and resolve manually", "role", role, "messages", strings.Join(quarantined, ","), "max_attempts", w.Config.MaxAttempts)
 	}
 	if len(chosen) == 0 {
 		return nil
@@ -205,10 +205,10 @@ func (w *Worker) Tick(ctx context.Context) error {
 	for _, role := range roles {
 		a, err := ResolveAgent(w.Config.Root, role, agents)
 		if err != nil {
-			w.warnOnce(role, err)
+			w.logOnce("seat:"+role, "seat unresolved", "role", role, "error", err)
 			continue
 		}
-		w.clearWarn(role)
+		w.clearWarn("seat:" + role)
 		if a.Status != "idle" && a.Status != "done" {
 			continue
 		}

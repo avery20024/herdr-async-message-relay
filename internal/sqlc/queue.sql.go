@@ -354,17 +354,20 @@ func (q *Queries) HeadMessages(ctx context.Context, arg HeadMessagesParams) ([]M
 }
 
 const headPendingMessages = `-- name: HeadPendingMessages :many
-SELECT seq, id, idempotency_key, sender, recipient, body, created_at, state, batch_id FROM messages WHERE recipient = ? AND state IN ('queued','uncertain')
-ORDER BY seq LIMIT ?
+SELECT seq, id, idempotency_key, sender, recipient, body, created_at, state, batch_id FROM messages
+WHERE recipient = ?1 AND state IN ('queued','uncertain')
+  AND (state = 'queued' OR (SELECT COUNT(*) FROM batch_members WHERE message_id = messages.id) < CAST(?2 AS INTEGER))
+ORDER BY seq LIMIT ?3
 `
 
 type HeadPendingMessagesParams struct {
-	Recipient string `json:"recipient"`
-	Limit     int64  `json:"limit"`
+	Recipient   string `json:"recipient"`
+	MaxAttempts int64  `json:"max_attempts"`
+	PageLimit   int64  `json:"page_limit"`
 }
 
 func (q *Queries) HeadPendingMessages(ctx context.Context, arg HeadPendingMessagesParams) ([]Message, error) {
-	rows, err := q.db.QueryContext(ctx, headPendingMessages, arg.Recipient, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, headPendingMessages, arg.Recipient, arg.MaxAttempts, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -383,6 +386,46 @@ func (q *Queries) HeadPendingMessages(ctx context.Context, arg HeadPendingMessag
 			&i.State,
 			&i.BatchID,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const heldMessages = `-- name: HeldMessages :many
+SELECT seq, id FROM messages
+WHERE recipient = ?1 AND state = 'uncertain'
+  AND (SELECT COUNT(*) FROM batch_members WHERE message_id = messages.id) >= CAST(?2 AS INTEGER)
+ORDER BY seq
+`
+
+type HeldMessagesParams struct {
+	Recipient   string `json:"recipient"`
+	MaxAttempts int64  `json:"max_attempts"`
+}
+
+type HeldMessagesRow struct {
+	Seq int64  `json:"seq"`
+	ID  string `json:"id"`
+}
+
+func (q *Queries) HeldMessages(ctx context.Context, arg HeldMessagesParams) ([]HeldMessagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, heldMessages, arg.Recipient, arg.MaxAttempts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []HeldMessagesRow{}
+	for rows.Next() {
+		var i HeldMessagesRow
+		if err := rows.Scan(&i.Seq, &i.ID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -610,17 +653,6 @@ func (q *Queries) ListMessages(ctx context.Context, limit int64) ([]Message, err
 	return items, nil
 }
 
-const messageAttempts = `-- name: MessageAttempts :one
-SELECT COUNT(*) AS attempts FROM batch_members WHERE message_id = ?
-`
-
-func (q *Queries) MessageAttempts(ctx context.Context, messageID string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, messageAttempts, messageID)
-	var attempts int64
-	err := row.Scan(&attempts)
-	return attempts, err
-}
-
 const pendingRecipients = `-- name: PendingRecipients :many
 SELECT recipient FROM messages WHERE state IN ('queued','dispatching','uncertain')
 GROUP BY recipient ORDER BY MIN(seq)
@@ -737,18 +769,20 @@ func (q *Queries) ResolveMessagesSubmitted(ctx context.Context, batchID sql.Null
 	return err
 }
 
-const supersedeBatch = `-- name: SupersedeBatch :execrows
-UPDATE batches SET state = 'resolved_retry', updated_at = ?, detail = ? WHERE id = ? AND state = 'uncertain'
+const supersedeBatchIfSettled = `-- name: SupersedeBatchIfSettled :execrows
+UPDATE batches SET state = 'resolved_retry', updated_at = ?, detail = ?
+WHERE batches.id = ? AND batches.state = 'uncertain'
+  AND NOT EXISTS (SELECT 1 FROM messages WHERE batch_id = batches.id AND messages.state = 'uncertain')
 `
 
-type SupersedeBatchParams struct {
+type SupersedeBatchIfSettledParams struct {
 	UpdatedAt int64  `json:"updated_at"`
 	Detail    string `json:"detail"`
 	ID        string `json:"id"`
 }
 
-func (q *Queries) SupersedeBatch(ctx context.Context, arg SupersedeBatchParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, supersedeBatch, arg.UpdatedAt, arg.Detail, arg.ID)
+func (q *Queries) SupersedeBatchIfSettled(ctx context.Context, arg SupersedeBatchIfSettledParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, supersedeBatchIfSettled, arg.UpdatedAt, arg.Detail, arg.ID)
 	if err != nil {
 		return 0, err
 	}

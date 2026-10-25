@@ -125,7 +125,7 @@ export HERDR_RELAY_FROM=dev
 hrelay send gm 'Task 123 is ready. Please inspect the evidence.'
 ```
 
-Recipients are matched to `<team-root>/角色/<role>` (the literal directory name `角色` is required). Existing role directories and the agent's reported CWD must agree. Setup and SOP integration: [agent guide](docs/agent-usage.md), optional [skill](skills/hrelay/SKILL.md), and [CLI reference](docs/cli-reference.md).
+Recipients are matched to `<team-root>/角色/<role>` (the literal directory name `角色` is required) using `pane_id` from `herdr agent list`: exact role directory, then a path inside it, then an exact `foreground_cwd`. A seat that belongs to another role is never used, and an ambiguous or missing seat is skipped with a warning. Setup and SOP integration: [agent guide](docs/agent-usage.md), optional [skill](skills/hrelay/SKILL.md), and [CLI reference](docs/cli-reference.md).
 
 **Acceptance is not a read receipt.** `accepted: true` means stored, not delivered, read or approved. Preserve the returned message ID / idempotency key, and never blindly resend with a new key. If a submission cannot be observed, the worker retries the same messages in FIFO order after a short backoff, up to `DELIVER_MAX_ATTEMPTS`; delivery is therefore **at least once**, and the envelope keeps each message ID so the receiver can recognise a repeat. See [recovery and delivery semantics](docs/cli-reference.md#recovery-and-delivery-semantics).
 

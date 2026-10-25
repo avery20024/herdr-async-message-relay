@@ -99,3 +99,33 @@ func TestResolveAgentAcceptsSubdirectoryAndForegroundCWD(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveAgentIgnoresOtherRoleSeats(t *testing.T) {
+	root := t.TempDir()
+	for _, role := range []string{"gm", "dev", "dev-2"} {
+		if err := os.MkdirAll(filepath.Join(root, "角色", role, "sub"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seq := int64(3)
+	devDir := filepath.Join(root, "角色", "dev")
+	foreign := Agent{CWD: filepath.Join(root, "角色", "gm"), ForegroundCWD: filepath.Join(devDir, "sub"), Pane: "w1:p1", Seq: &seq}
+	if _, err := ResolveAgent(root, "dev", []Agent{foreign}); err == nil {
+		t.Fatal("another role's foreground claimed this role")
+	}
+	if _, err := ResolveAgent(root, "dev", []Agent{{CWD: filepath.Join(root, "角色", "dev-2"), Pane: "w1:p2", Seq: &seq}}); err == nil {
+		t.Fatal("dev-2 seat eaten by dev")
+	}
+	devSeat := Agent{CWD: devDir, Pane: "w1:p3", Seq: &seq}
+	exactForeground := Agent{CWD: filepath.Join(root, "角色", "gm"), ForegroundCWD: devDir, Pane: "w1:p4", Seq: &seq}
+	if a, err := ResolveAgent(root, "dev", []Agent{devSeat, exactForeground}); err != nil || a.Pane != "w1:p3" {
+		t.Fatalf("real seat lost to foreign foreground: %+v %v", a, err)
+	}
+	subSeat := Agent{CWD: filepath.Join(devDir, "sub"), Pane: "w1:p5", Seq: &seq}
+	if a, err := ResolveAgent(root, "dev", []Agent{subSeat, exactForeground}); err != nil || a.Pane != "w1:p5" {
+		t.Fatalf("subdirectory seat must outrank foreground: %+v %v", a, err)
+	}
+	if a, err := ResolveAgent(root, "dev", []Agent{{CWD: "/elsewhere", ForegroundCWD: devDir, Pane: "w1:p6", Seq: &seq}}); err != nil || a.Pane != "w1:p6" {
+		t.Fatalf("foreground fallback broken: %+v %v", a, err)
+	}
+}

@@ -114,11 +114,10 @@ func (s *Store) Claim(ctx context.Context, b sqlc.Batch, messages []sqlc.Message
 		if err := q.InsertBatch(ctx, sqlc.InsertBatchParams{ID: b.ID, Recipient: b.Recipient, Pane: b.Pane, BaselineSeq: b.BaselineSeq, CreatedAt: b.CreatedAt, UpdatedAt: b.CreatedAt}); err != nil {
 			return err
 		}
+		previous := map[string]bool{}
 		for i, m := range messages {
 			if m.State == "uncertain" && m.BatchID.Valid {
-				if _, err := q.SupersedeBatch(ctx, sqlc.SupersedeBatchParams{ID: m.BatchID.String, UpdatedAt: time.Now().UnixMilli(), Detail: "superseded by retry batch " + b.ID}); err != nil {
-					return err
-				}
+				previous[m.BatchID.String] = true
 			}
 			n, err := q.ClaimPendingMessage(ctx, sqlc.ClaimPendingMessageParams{ID: m.ID, BatchID: sql.NullString{String: b.ID, Valid: true}})
 			if err != nil {
@@ -128,6 +127,12 @@ func (s *Store) Claim(ctx context.Context, b sqlc.Batch, messages []sqlc.Message
 				return errors.New("message is no longer pending")
 			}
 			if err := q.InsertBatchMember(ctx, sqlc.InsertBatchMemberParams{BatchID: b.ID, MessageID: m.ID, Position: int64(i + 1)}); err != nil {
+				return err
+			}
+		}
+		// 先完成搬移再判斷：舊批次若仍有被保留的 uncertain 成員，維持 uncertain 以便人工 resolve。
+		for id := range previous {
+			if _, err := q.SupersedeBatchIfSettled(ctx, sqlc.SupersedeBatchIfSettledParams{ID: id, UpdatedAt: time.Now().UnixMilli(), Detail: "superseded by retry batch " + b.ID}); err != nil {
 				return err
 			}
 		}

@@ -125,7 +125,7 @@ export HERDR_RELAY_FROM=dev
 hrelay send gm 'Task 123 已備妥，請查核證據。'
 ```
 
-接收角色對應 `<team-root>/角色/<role>`，其中 `角色` 是固定的目錄名稱；既有角色目錄與 agent 回報的 CWD 須一致。設定與 SOP 整合見 [agent 文件（英文）](docs/agent-usage.md)、可選 [skill（英文）](skills/hrelay/SKILL.md) 及 [CLI 參考](docs/cli-reference.zh-TW.md)。
+接收角色對應 `<team-root>/角色/<role>`（`角色` 是固定目錄名稱），`pane_id` 取自 `herdr agent list`：先比對角色目錄本身，其次目錄內路徑，最後 `foreground_cwd` 完全相符。屬於其他角色的座位不會被採用；找不到或同時多個符合時不投遞並記警告。設定與 SOP 整合見 [agent 文件（英文）](docs/agent-usage.md)、可選 [skill（英文）](skills/hrelay/SKILL.md) 及 [CLI 參考](docs/cli-reference.zh-TW.md)。
 
 **入列成功不等於已讀。** `accepted: true` 代表已儲存，不是已投遞、已讀或已核准。保留 message ID／冪等 key，不要換新 key 盲目重送。若提交結果無法觀測，worker 會在短暫退避後依 FIFO 重送同一批訊息，最多 `DELIVER_MAX_ATTEMPTS` 次，因此投遞語意為 **at-least-once**；信封保留每則 message ID 供接收端辨識重複，詳見 [復原與投遞語意](docs/cli-reference.zh-TW.md#復原與投遞語意)。
 

@@ -8,7 +8,7 @@
 
 目前為早期版本，支援 macOS／Linux 的 arm64 與 amd64，Herdr 相容基準為 **0.9.3**，不支援 Windows。
 
-角色探索目前固定遵循 `<team-root>/角色/<role>`。接收角色的 live agent 必須在 `herdr agent list` 回報該角色根目錄作為 CWD，或回報其解析後的實體路徑。角色名稱以小寫英文字母開頭，後續僅允許小寫英文字母、數字與連字號。尚未提供可設定的角色路由 registry；即使閱讀英文文件，目錄名稱仍須是字面的 `角色`。
+角色探索遵循 `<team-root>/角色/<role>`，`pane_id` 一律由 `herdr agent list` 取得。比對優先序為：agent 的 `cwd` 等於角色根目錄（或解析後的實體路徑）→ `cwd` 位於該角色目錄之下 → `foreground_cwd` 恰好等於角色根目錄。`cwd` 已屬於其他角色目錄的 agent 一律不用於本角色；符合者必須唯一，0 個或多個都代表不投遞並記下警告。角色名稱以小寫英文字母開頭，後續僅允許小寫英文字母、數字與連字號。尚未提供可設定的角色路由 registry；即使閱讀英文文件，目錄名稱仍須是字面的 `角色`。
 
 自 v0.2.0 起，`service start`／`send --ensure` 可登記並啟動 **macOS launchd user agent** 或 **Linux systemd user service**。Herdr startup hook 會恢復已登記、未暫停的專案。安裝階段不會猜測專案位置，首次操作必須提供 `--root` 或 `DELIVER_ROOT`。不使用 shell 背景 fork、不自動建立角色目錄、不修改 PATH，也不自動注入 harness skill。團隊啟動設定提供 root 與真實發送角色，呼叫方選擇接收角色；短語法 `send ROLE MESSAGE` 預設自動確保服務就緒。
 

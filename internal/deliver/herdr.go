@@ -113,42 +113,49 @@ func (h CLIHerdr) Prompt(ctx context.Context, pane, body string) error {
 
 var panePattern = regexp.MustCompile(`^w[0-9A-Za-z]+:p[0-9A-Za-z]+$`)
 
-// seatRank 由 herdr agent list 的 cwd／foreground_cwd 判斷座位歸屬，數字越大越精確。
-func seatRank(a Agent, logical, physical string) int {
-	paths := []string{a.CWD}
-	if a.ForegroundCWD != "" {
-		paths = append(paths, a.ForegroundCWD)
+// seatRank 由 herdr agent list 的 cwd／foreground_cwd 判斷座位歸屬：
+// cwd 完全相符（3）> cwd 在角色目錄下（2）> foreground_cwd 完全相符（1）。
+// cwd 已落在其他角色目錄時一律排除，避免以前景程序認領別人的訊息。
+func seatRank(a Agent, rolesDir, role, logical, physical string) int {
+	cwd := strings.TrimSuffix(a.CWD, string(filepath.Separator))
+	foreground := strings.TrimSuffix(a.ForegroundCWD, string(filepath.Separator))
+	if rel, err := filepath.Rel(rolesDir, cwd); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+		if owner := strings.SplitN(rel, string(filepath.Separator), 2)[0]; owner != role {
+			return 0
+		}
 	}
 	rank := 0
-	for _, path := range paths {
-		if path == "" {
+	for _, base := range []string{logical, physical} {
+		if base == "" {
 			continue
 		}
-		for _, base := range []string{logical, physical} {
-			if base == "" {
-				continue
-			}
-			if path == base {
-				rank = max(rank, 3)
-			} else if strings.HasPrefix(path, base+string(filepath.Separator)) {
-				rank = max(rank, 2)
-			}
+		switch {
+		case cwd == base:
+			rank = max(rank, 3)
+		case strings.HasPrefix(cwd, base+string(filepath.Separator)):
+			rank = max(rank, 2)
+		}
+	}
+	for _, base := range []string{logical, physical} {
+		if base != "" && foreground == base {
+			rank = max(rank, 1)
 		}
 	}
 	return rank
 }
 
-// ResolveAgent 以 herdr agent list 解析角色座位；完全相符優先，其次子目錄與 foreground cwd，仍要求唯一 pane。
+// ResolveAgent 以 herdr agent list 解析角色座位；較精確的比對優先，仍要求唯一。
 func ResolveAgent(root, role string, agents []Agent) (Agent, error) {
 	logical := filepath.Join(root, "角色", role)
 	physical, err := filepath.EvalSymlinks(logical)
 	if err != nil {
 		physical = ""
 	}
+	rolesDir := filepath.Dir(logical)
 	best := 0
 	matches := []Agent{}
 	for _, a := range agents {
-		rank := seatRank(a, logical, physical)
+		rank := seatRank(a, rolesDir, role, logical, physical)
 		if rank == 0 {
 			continue
 		}
