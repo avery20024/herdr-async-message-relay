@@ -68,9 +68,16 @@ func (m *Model) text(s string) string {
 var labels = map[string]string{
 	"Preferences": "偏好設定", "Language": "語系", "Theme": "主題", "Auto": "自動", "Terminal (default)": "終端預設",
 	"Preferences storage unavailable.": "偏好設定儲存位置無法使用。", "Unable to load preferences.": "無法載入偏好設定。", "Unable to save preferences.": "無法儲存偏好設定。", "Preferences reloaded.": "已重載偏好設定。", "Preferences saved.": "已儲存偏好設定。",
-	"↑↓ field ←→ value Enter save Esc cancel ^R reload":                                                      "↑↓選項 ←→設定 Enter儲存 Esc取消 ^R重載",
-	"j/k select u/d list U/D body [] data r refresh P clear filters ^F filters ^P prefs ^R config ^W auto q": "j/k選列 u/d半頁 U/D本文 []資料 r刷新 P 清除篩選 ^F篩選 ^P設定 ^R重載 ^W自動 q離開",
-	"j/k u/d U/D [] r P clear filters ^F filter ^P prefs ^R reload ^W auto q":                                "j/k u/d U/D [] r P 清除篩選 ^F篩選 ^P設定 ^R重載 ^W自動 q",
+	"↑↓ field ←→ value Enter save Esc cancel ^R reload":                                                             "↑↓選項 ←→設定 Enter儲存 Esc取消 ^R重載",
+	"j/k select u/d list U/D body [] data r refresh P clear filters ^F filters ^P prefs ^R config ^W auto q ? help": "j/k選列 u/d半頁 U/D本文 []資料 r刷新 P 清除篩選 ^F篩選 ^P設定 ^R重載 ^W自動 q離開 ?說明",
+	"j/k u/d U/D [] r P clear filters ^F filter ^P prefs ^R reload ^W auto q ? help":                                "j/k u/d U/D [] r P 清除篩選 ^F篩選 ^P設定 ^R重載 ^W自動 q ?說明",
+	"Keyboard shortcuts": "快捷鍵說明", "Quit UI": "離開UI", "ESC close": "ESC 退出", "Navigation": "訊息導覽", "Main screen": "主畫面", "Filter dialog": "篩選視窗", "Preferences dialog": "偏好設定視窗", "Global": "全域", "Help screen": "說明畫面",
+	"Select next/previous message": "選取下一／上一則訊息", "List half-page up/down": "訊息列表上／下半頁", "Body page up/down": "訊息本文上／下一頁", "Metadata page up/down": "訊息資料上／下一頁",
+	"Open filters": "開啟篩選", "Clear applied filters": "清除已套用篩選", "Open Preferences": "開啟偏好設定", "Refresh messages only": "只刷新訊息", "Toggle one-second auto refresh": "開關每秒自動刷新", "Quit from main screen only": "僅在主畫面離開UI",
+	"Choose field": "選擇欄位", "Cycle value": "切換條件／選項", "Clear selected draft field": "清除此欄草稿", "Clear all draft fields": "清除全部草稿", "Apply draft filters": "套用篩選草稿", "Cancel filter draft": "取消篩選草稿",
+	"Choose language or theme": "選擇語系或主題", "Save and apply preferences": "儲存並套用偏好設定", "Cancel preferences draft": "取消偏好設定草稿", "Open/close this help": "開啟／關閉本說明", "Reload settings, not messages": "重載設定、不刷新訊息", "Quit UI from any screen": "任何畫面均可離開UI",
+	"Scroll help down/up": "說明向下／上捲動", "Help page up/down": "說明上／下一頁", "Help top/bottom": "說明頂端／底端", "Return to previous screen": "回到原畫面",
+	"j/k scroll u/d page g/G ends Esc/? close ^C quit": "j/k捲動 u/d翻頁 g/G頂底 Esc/?關閉 ^C離開",
 
 	"STALE": "未更新",
 	"↑↓ field ←→ value d clear P clear-all Enter apply Esc cancel": "↑↓選項 ←→條件 d清此項 P全清 Enter套用 Esc取消",
@@ -126,6 +133,7 @@ func (m *Model) metadataLines() []string {
 	return strings.Split(ansi.Wrap(clean(text), m.metadataWidth(), " /"), "\n")
 }
 func (m *Model) clampLayout() {
+	m.clampHelp()
 	m.selected = max(0, min(m.selected, max(0, len(m.rows)-1)))
 	visible := m.visibleMessages()
 	if m.selected < m.top {
@@ -255,6 +263,9 @@ func (m *Model) View() tea.View {
 		for i := range content {
 			content[i] = trustedCell(content[i], width-2)
 		}
+	}
+	if m.helpOpen {
+		content = m.helpOverlay(content)
 	}
 	title := " " + clean(filepath.Base(m.root)) + " · hrelay ui "
 	summary := fmt.Sprintf("%d/%d", min(m.selected+1, len(m.rows)), len(m.rows))

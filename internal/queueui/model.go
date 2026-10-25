@@ -42,6 +42,8 @@ type Model struct {
 	pendingFrom                       string
 	filter, draft                     Filter
 	popup                             bool
+	helpOpen                          bool
+	helpOffset                        int
 	field                             int
 	auto                              bool
 	timer                             uint64
@@ -248,12 +250,23 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		m.configNotice = ""
 		key := msg.String()
-		if key == "ctrl+c" || (!m.popup && !m.preferencesOpen && key == "q") {
+		if key == "ctrl+c" || (key == "q" && ((!m.popup && !m.preferencesOpen && !m.helpOpen) || m.width < minimumWidth || m.height < minimumHeight)) {
 			m.cancelFetch()
 			return m, tea.Quit
 		}
 		if key == "ctrl+r" {
 			m.reloadPreferences()
+			return m, nil
+		}
+		if key == "?" || key == "shift+/" || key == "shift+?" {
+			m.helpOpen = !m.helpOpen
+			if m.helpOpen {
+				m.helpOffset = 0
+			}
+			return m, nil
+		}
+		if m.helpOpen {
+			m.helpKey(key)
 			return m, nil
 		}
 		if m.preferencesOpen {

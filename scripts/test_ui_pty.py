@@ -177,6 +177,78 @@ class UITerminalTests(unittest.TestCase):
                 return
         self.fail("UI did not exit")
 
+    def test_shortcuts_help_and_dialog_drafts(self):
+        self.launch(columns=168)
+        count = len(self.server.requests)
+        os.write(self.fd, b"?")
+        self.wait_for_text(b"Keyboard shortcuts")
+        self.wait_for_text(b"Ctrl+F")
+        self.wait_for_text(b"Ctrl+P")
+        self.wait_for_text(b"ESC close")
+        os.write(self.fd, b"q\x12")  # help 內 q 不退出，Ctrl+R 不查訊息。
+        self.pump(0.3)
+        self.assertEqual(len(self.server.requests), count)
+        self.assertFalse(self.preferences.exists())
+        os.write(self.fd, b"?")
+        self.pump(0.2)
+        self.output.clear()
+        os.write(self.fd, b"\x06")
+        self.wait_for_text(b"Filters")
+        os.write(self.fd, b"\x1b[C")  # sender=dev 草稿。
+        self.pump(0.15)
+        self.output.clear()
+        os.write(self.fd, b"?")
+        self.wait_for_text(b"Keyboard shortcuts")
+        self.output.clear()
+        os.write(self.fd, b"\x1b")
+        # 說明外footer現為全空白，關閉後欄標完整重繪；選取列可能在較窄modal外而不重輸。
+        self.wait_for_text(b"Filters 1/3")
+        self.assertEqual(len(self.server.requests), count)
+        os.write(self.fd, b"\r")
+        self.pump(0.3)
+        self.assertTrue(any("sender=dev" in path for _, path in self.server.requests))
+        count = len(self.server.requests)
+        os.write(self.fd, b"\x10")
+        self.pump(0.2)
+        os.write(self.fd, b"\x1b[Cj\x1b[C")  # en、Latte 草稿。
+        self.pump(0.2)
+        self.output.clear()
+        os.write(self.fd, b"?")
+        self.wait_for_text(b"Keyboard shortcuts")
+        self.output.clear()
+        os.write(self.fd, b"?")
+        # 說明關閉後footer完整重繪；草稿內容仍由下方實際保存值核對。
+        self.wait_for_text(b"Preferences 2/2")
+        self.assertFalse(self.preferences.exists())
+        os.write(self.fd, b"\r")
+        self.pump(0.3)
+        saved = json.loads(self.preferences.read_text())
+        self.assertEqual((saved["language"], saved["theme"]), ("en", "catppuccin-latte"))
+        self.assertEqual(len(self.server.requests), count)
+        os.write(self.fd, b"?")
+        self.pump(0.2)
+        self.finish(b"\x03")
+
+    def test_shortcuts_help_minimum_resize_and_exit(self):
+        self.server.items = [{"seq": 1, "id": "min-help", "sender": "dev", "recipient": "gm",
+                              "state": "queued", "body": "MINREADY", "created_at": 1792771200000}]
+        self.launch(rows=10, columns=20, needle=b"MINREADY")
+        count = len(self.server.requests)
+        os.write(self.fd, b"?")
+        self.wait_for_text(b"ESC close")
+        os.write(self.fd, b"dG")
+        self.pump(0.2)
+        fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
+        os.kill(self.child, signal.SIGWINCH)
+        self.pump(0.3)
+        os.write(self.fd, b"g")
+        self.wait_for_text(b"Select next/previous message")
+        self.assertEqual(len(self.server.requests), count)
+        fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 9, 19, 0, 0))
+        os.kill(self.child, signal.SIGWINCH)
+        self.wait_for_text(b"Minimum")
+        self.finish(b"q")
+
     def test_keyboard_filter_refresh_resize_and_quit(self):
         self.launch()
         count = len(self.server.requests)
