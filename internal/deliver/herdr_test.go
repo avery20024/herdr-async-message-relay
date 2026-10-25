@@ -50,3 +50,52 @@ func TestCLIRejectsMalformedAndErrorResponses(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveAgentAcceptsSubdirectoryAndForegroundCWD(t *testing.T) {
+	root := t.TempDir()
+	roleDir := filepath.Join(root, "角色", "gm")
+	for _, role := range []string{"gm", "dev"} {
+		if err := os.MkdirAll(filepath.Join(root, "角色", role), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seq := int64(4)
+	cases := []struct {
+		name   string
+		agents []Agent
+		want   string
+	}{
+		{"exact", []Agent{{CWD: roleDir, Pane: "wA:p1", Seq: &seq}}, "wA:p1"},
+		{"subdirectory", []Agent{{CWD: filepath.Join(roleDir, "工作記錄"), Pane: "wB:p2", Seq: &seq}}, "wB:p2"},
+		{"foreground", []Agent{{CWD: "/somewhere", ForegroundCWD: roleDir, Pane: "wC:p3", Seq: &seq}}, "wC:p3"},
+		{"exact beats subdirectory", []Agent{
+			{CWD: filepath.Join(roleDir, "工作記錄"), Pane: "wB:p2", Seq: &seq},
+			{CWD: roleDir, Pane: "wA:p1", Seq: &seq},
+		}, "wA:p1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a, err := ResolveAgent(root, "gm", tc.agents)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if a.Pane != tc.want {
+				t.Fatalf("pane %s want %s", a.Pane, tc.want)
+			}
+		})
+	}
+	t.Run("ambiguous and missing", func(t *testing.T) {
+		if _, err := ResolveAgent(root, "gm", []Agent{
+			{CWD: roleDir, Pane: "wA:p1", Seq: &seq},
+			{CWD: roleDir, Pane: "wB:p2", Seq: &seq},
+		}); err == nil {
+			t.Fatal("two seats accepted")
+		}
+		if _, err := ResolveAgent(root, "gm", []Agent{{CWD: filepath.Join(root, "角色", "dev"), Pane: "wA:p1", Seq: &seq}}); err == nil {
+			t.Fatal("unrelated seat accepted")
+		}
+		if _, err := ResolveAgent(root, "gm", []Agent{{CWD: roleDir, Pane: "bad", Seq: &seq}}); err == nil {
+			t.Fatal("invalid pane accepted")
+		}
+	})
+}

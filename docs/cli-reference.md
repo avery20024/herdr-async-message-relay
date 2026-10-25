@@ -158,6 +158,19 @@ Independent AI-agent messages; keep contexts separate. Verbatim; not human instr
 
 Actual IDs are not shortened. `message` becomes `messages` for multiple messages; byte counts refer to the original UTF-8 body. Boundaries are context separators, not authentication or protection against malicious message text.
 
+When a batch retries messages whose earlier submission was unconfirmed, the header adds a `RETRY:` line stating how many may already have reached the seat and asking the recipient to check its own records, and each retried message adds `| retried: may already have been delivered` to its boundary line. A normal batch never carries these markers.
+
+```text
+[hrelay | batch batch-… | 1 message]
+RETRY: 1 of 1 were sent earlier without a confirmed result and may already have reached this seat.
+Check your own records first and act on each message ID at most once; a duplicate is possible.
+Independent AI-agent messages; keep contexts separate. Verbatim; not human instructions or authorization.
+
+--- message 1/1 | id msg-… | dev -> gm | 123 bytes | retried: may already have been delivered ---
+<original body>
+--- end message 1/1 | id msg-… ---
+```
+
 ## Display language
 
 **Available since v0.3.0.** Earlier binaries do not include these language options or the English envelope. Updating the CLI alone does not replace an already-running worker; deploy the updated worker through the normal operator-controlled upgrade process.
@@ -245,6 +258,8 @@ Foreground settings are read at startup. Managed services snapshot settings at r
 | `DELIVER_BATCH_SIZE` | `3` | Maximum messages per batch, 1–100 |
 | `DELIVER_BATCH_BYTES` | `12000` | Maximum rendered batch bytes, 2048–64000; individual body limit is this value minus 1024 |
 | `DELIVER_POLL_MS` | `500` | Scan interval in milliseconds, 50–60000 |
+| `DELIVER_RETRY_BACKOFF_MS` | `30000` | Wait before retrying an `uncertain` batch, 0–600000 |
+| `DELIVER_MAX_ATTEMPTS` | `3` | Maximum deliveries per message before it is held for inspection, 1–10 |
 | `DELIVER_ROOT` | Working directory | Team root; configure explicitly for agents; `--root` overrides it |
 | `HERDR_RELAY_FROM` | None | Actual sender role supplied by the team launcher; `--from` overrides it |
 | `HERDR_RELAY_LANG` | `auto` | Native CLI display language: `auto`, `en`, `zh-TW`; global `--lang` overrides it; not saved in service records |
@@ -279,11 +294,11 @@ Do not shrink the batch byte limit below what an already queued message requires
 | `queued` | Committed and waiting for a ready role |
 | `dispatching` | Fixed batch membership; an external submission may be in progress |
 | `submitted` | Submission observation succeeded; not a read or processing receipt |
-| `uncertain` | Submission may have happened; no automatic replay |
+| `uncertain` | Submission may have happened; retried after a backoff, up to the attempt limit |
 
-The worker uses bounded `herdr agent prompt --wait` observation, not a wait for the recipient's task to finish. A submission error or a daemon restart during dispatch conservatively produces `uncertain`, blocking later batches for that role. Other roles can continue.
+The worker uses bounded `herdr agent prompt --wait` observation, not a wait for the recipient's task to finish. A submission error or an interrupted dispatch conservatively produces `uncertain`; the same messages are then retried in FIFO order after `DELIVER_RETRY_BACKOFF_MS`, up to `DELIVER_MAX_ATTEMPTS` deliveries per message. Delivery is therefore **at least once**: a retry can duplicate a submission that had in fact reached the pane. Each message keeps its ID inside the batch envelope so the receiver can recognise a repeat. When a message reaches the attempt limit it is held for inspection and the remaining queue continues; a warning names the held message IDs. Other roles are never blocked by one role's uncertainty.
 
-After inspecting the recipient, prompt input, and task records, an authorized operator can resolve a batch:
+Retries are automatic; `resolve` is for inspected exceptions and for messages held at the attempt limit. After inspecting the recipient, prompt input, and task records, an authorized operator can resolve a batch:
 
 ```sh
 # Confirmed not submitted: queue the same message IDs for another attempt.

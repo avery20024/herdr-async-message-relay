@@ -23,7 +23,11 @@ type Config struct {
 	BatchBytes     int
 	Poll           time.Duration
 	CommandTimeout time.Duration
-	Herdr          string
+	// RetryBackoff 是 unsure 批次重送前的退避，避免每輪掃描重複投遞。
+	RetryBackoff time.Duration
+	// MaxAttempts 是單一訊息允許的投遞次數上限，超過則隔離並告警。
+	MaxAttempts int
+	Herdr       string
 }
 
 func EnvInt(name string, fallback, min, max int) (int, error) {
@@ -90,6 +94,16 @@ func LoadConfig(root string) (c Config, err error) {
 		return
 	}
 	c.Poll = time.Duration(poll) * time.Millisecond
+	backoff, e := EnvInt("DELIVER_RETRY_BACKOFF_MS", 30000, 0, 600000)
+	if e != nil {
+		err = e
+		return
+	}
+	c.RetryBackoff = time.Duration(backoff) * time.Millisecond
+	c.MaxAttempts, err = EnvInt("DELIVER_MAX_ATTEMPTS", 3, 1, 10)
+	if err != nil {
+		return
+	}
 	c.CommandTimeout = 10 * time.Second
 	c.Herdr = os.Getenv("HERDR_BIN_PATH")
 	if c.Herdr == "" {

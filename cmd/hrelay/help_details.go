@@ -114,6 +114,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 				"Runs until interrupted; use a foreground terminal or an explicit process supervisor.",
 				"DELIVER_STATE_DIR overrides the state directory; otherwise use XDG_STATE_HOME or ~/.local/state plus the project hash.",
 				"DELIVER_BATCH_SIZE defaults to 3 (1..100); DELIVER_BATCH_BYTES to 12000 (2048..64000); DELIVER_POLL_MS to 500 (50..60000).",
+				"DELIVER_RETRY_BACKOFF_MS defaults to 30000 (0..600000); DELIVER_MAX_ATTEMPTS to 3 (1..10); delivery is at least once.",
 				"HERDR_BIN_PATH defaults to herdr; delivery requires the correct inherited Herdr socket context.",
 			},
 			examples: []string{"hrelay --root /absolute/team serve"},
@@ -128,7 +129,8 @@ func buildCommandHelpTopics() map[string]commandHelp {
 			},
 			notes: []string{
 				"--batch, --action and --note default to empty; --confirm defaults to false. All must be explicitly supplied.",
-				"Only uncertain batches can be resolved; inspect the target pane and stored records first.",
+				"Only uncertain batches can be resolved; uncertain batches are retried automatically until DELIVER_MAX_ATTEMPTS.",
+				"Inspect the target pane and stored records before resolving a held batch.",
 				"retry requeues the batch and may duplicate a prior submission; submitted records it without replay.",
 				"Inspect uncertain batches before resolving; never blindly replay a message.",
 			},

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"time"
+
+	"strings"
 )
 
 type AgentSession struct {
@@ -19,11 +21,12 @@ type AgentSession struct {
 }
 
 type Agent struct {
-	Session AgentSession `json:"agent_session"`
-	CWD     string       `json:"cwd"`
-	Pane    string       `json:"pane_id"`
-	Status  string       `json:"agent_status"`
-	Seq     *int64       `json:"state_change_seq"`
+	Session       AgentSession `json:"agent_session"`
+	CWD           string       `json:"cwd"`
+	ForegroundCWD string       `json:"foreground_cwd"`
+	Pane          string       `json:"pane_id"`
+	Status        string       `json:"agent_status"`
+	Seq           *int64       `json:"state_change_seq"`
 }
 
 type Herdr interface {
@@ -110,19 +113,57 @@ func (h CLIHerdr) Prompt(ctx context.Context, pane, body string) error {
 
 var panePattern = regexp.MustCompile(`^w[0-9A-Za-z]+:p[0-9A-Za-z]+$`)
 
+// seatRank 由 herdr agent list 的 cwd／foreground_cwd 判斷座位歸屬，數字越大越精確。
+func seatRank(a Agent, logical, physical string) int {
+	paths := []string{a.CWD}
+	if a.ForegroundCWD != "" {
+		paths = append(paths, a.ForegroundCWD)
+	}
+	rank := 0
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		for _, base := range []string{logical, physical} {
+			if base == "" {
+				continue
+			}
+			if path == base {
+				rank = max(rank, 3)
+			} else if strings.HasPrefix(path, base+string(filepath.Separator)) {
+				rank = max(rank, 2)
+			}
+		}
+	}
+	return rank
+}
+
+// ResolveAgent 以 herdr agent list 解析角色座位；完全相符優先，其次子目錄與 foreground cwd，仍要求唯一 pane。
 func ResolveAgent(root, role string, agents []Agent) (Agent, error) {
 	logical := filepath.Join(root, "角色", role)
 	physical, err := filepath.EvalSymlinks(logical)
 	if err != nil {
-		return Agent{}, err
+		physical = ""
 	}
-	var matches []Agent
+	best := 0
+	matches := []Agent{}
 	for _, a := range agents {
-		if a.CWD == logical || a.CWD == physical {
+		rank := seatRank(a, logical, physical)
+		if rank == 0 {
+			continue
+		}
+		if rank > best {
+			best = rank
+			matches = matches[:0]
+		}
+		if rank == best {
 			matches = append(matches, a)
 		}
 	}
-	if len(matches) != 1 {
+	if len(matches) == 0 {
+		return Agent{}, fmt.Errorf("role %s has no seat in herdr agent list", role)
+	}
+	if len(matches) > 1 {
 		return Agent{}, fmt.Errorf("role %s matched %d seats", role, len(matches))
 	}
 	a := matches[0]

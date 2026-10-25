@@ -26,7 +26,7 @@ func fixture(t *testing.T) (*Store, Config) {
 			t.Fatal(err)
 		}
 	}
-	c := Config{Root: root, StateDir: root, BatchSize: 3, BatchBytes: 12000, Poll: 10 * time.Millisecond, CommandTimeout: time.Second}
+	c := Config{Root: root, StateDir: root, BatchSize: 3, BatchBytes: 12000, Poll: 10 * time.Millisecond, CommandTimeout: time.Second, RetryBackoff: 0, MaxAttempts: 3}
 	s, err := OpenStore(context.Background(), filepath.Join(root, "queue.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -222,8 +222,9 @@ func TestBusyAndUnknownNeverDispatch(t *testing.T) {
 	}
 }
 
-func TestUncertainBlocksRoleAndExplicitResolve(t *testing.T) {
+func TestUncertainRetriesAfterBackoffAndKeepsHistory(t *testing.T) {
 	s, c := fixture(t)
+	c.RetryBackoff = 0
 	ctx := context.Background()
 	h := &fakeHerdr{err: errors.New("submission response lost")}
 	w := worker(s, c, h)
@@ -237,35 +238,104 @@ func TestUncertainBlocksRoleAndExplicitResolve(t *testing.T) {
 	if got.State != "uncertain" {
 		t.Fatal(got)
 	}
-	enqueue(t, s, "gm", "later")
+	old := got.BatchID.String
+	// 退避結束後同一批訊息以 FIFO 重新打包，送到目前解析到的座位。
+	h.err = nil
 	a = seat(c, "gm", "idle", "wD:p7", 100)
 	if err := w.Dispatch(ctx, "gm", a); err != nil {
 		t.Fatal(err)
 	}
-	if h.count() != 1 {
-		t.Fatal("uncertain replayed to new pane")
-	}
-	if err := s.Resolve(ctx, got.BatchID.String, "retry", "target inspected: not submitted"); err != nil {
-		t.Fatal(err)
-	}
-	h.err = nil
-	if err := w.Dispatch(ctx, "gm", a); err != nil {
-		t.Fatal(err)
-	}
-	if h.count() != 2 || h.panes[1] != "wD:p7" || !strings.Contains(h.prompts[1], "first") {
+	if h.count() != 2 || h.panes[1] != "wD:p7" || !strings.Contains(h.prompts[1], "first") || !strings.Contains(h.prompts[1], "second") {
 		t.Fatal(h.prompts)
 	}
-	members, err := s.Q.BatchMessages(ctx, got.BatchID.String)
+	if !strings.Contains(h.prompts[1], "RETRY: 2 of 2 were sent earlier") || strings.Contains(h.prompts[0], "RETRY") {
+		t.Fatal(h.prompts)
+	}
+	if m, _ := s.Q.GetMessage(ctx, first.ID); m.State != "submitted" {
+		t.Fatal(m)
+	}
+	members, err := s.Q.BatchMessages(ctx, old)
 	if err != nil || len(members) != 2 || members[0].ID != first.ID {
 		t.Fatalf("old batch membership lost: %+v %v", members, err)
 	}
-	if err := s.Resolve(ctx, got.BatchID.String, "retry", "again"); err == nil {
-		t.Fatal("resolved batch resolved twice")
+	if b, err := s.Q.GetBatch(ctx, old); err != nil || b.State != "resolved_retry" {
+		t.Fatalf("old batch not marked retried: %+v %v", b, err)
+	}
+	if err := s.Resolve(ctx, old, "retry", "again"); err == nil {
+		t.Fatal("superseded batch resolved twice")
+	}
+}
+
+func TestRetryBackoffDefersUncertainBatch(t *testing.T) {
+	s, c := fixture(t)
+	c.RetryBackoff = time.Hour
+	ctx := context.Background()
+	h := &fakeHerdr{err: errors.New("submission response lost")}
+	w := worker(s, c, h)
+	enqueue(t, s, "gm", "first")
+	a := seat(c, "gm", "idle", "wC:p5", 1)
+	if err := w.Dispatch(ctx, "gm", a); err != nil {
+		t.Fatal(err)
+	}
+	h.err = nil
+	if err := w.Dispatch(ctx, "gm", seat(c, "gm", "idle", "wC:p5", 100)); err != nil {
+		t.Fatal(err)
+	}
+	if h.count() != 1 {
+		t.Fatal("retry ignored backoff")
+	}
+}
+
+func TestAttemptLimitQuarantinesAndKeepsFIFOFlowing(t *testing.T) {
+	s, c := fixture(t)
+	c.RetryBackoff, c.MaxAttempts = 0, 1
+	ctx := context.Background()
+	h := &fakeHerdr{err: errors.New("submission response lost")}
+	w := worker(s, c, h)
+	enqueue(t, s, "gm", "stuck")
+	a := seat(c, "gm", "idle", "wC:p5", 1)
+	if err := w.Dispatch(ctx, "gm", a); err != nil {
+		t.Fatal(err)
+	}
+	enqueue(t, s, "gm", "later")
+	h.err = nil
+	if err := w.Dispatch(ctx, "gm", seat(c, "gm", "idle", "wC:p5", 100)); err != nil {
+		t.Fatal(err)
+	}
+	if h.count() != 2 || strings.Contains(h.prompts[1], "stuck") || !strings.Contains(h.prompts[1], "later") {
+		t.Fatal(h.prompts)
+	}
+}
+
+func TestStaleDispatchingRecoversForRetry(t *testing.T) {
+	s, c := fixture(t)
+	c.RetryBackoff = 0
+	ctx := context.Background()
+	m := enqueue(t, s, "gm", "body")
+	b := sqlc.Batch{ID: NewID("batch-"), Recipient: "gm", Pane: "wC:p5", BaselineSeq: 1, CreatedAt: time.Now().UnixMilli()}
+	if err := s.Claim(ctx, b, []sqlc.Message{m}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, "UPDATE batches SET updated_at = ? WHERE id = ?", time.Now().Add(-time.Hour).UnixMilli(), b.ID); err != nil {
+		t.Fatal(err)
+	}
+	h := &fakeHerdr{}
+	w := worker(s, c, h)
+	if err := w.Dispatch(ctx, "gm", seat(c, "gm", "idle", "wC:p9", 50)); err != nil {
+		t.Fatal(err)
+	}
+	if h.count() != 1 || !strings.Contains(h.prompts[0], "body") {
+		t.Fatal(h.prompts)
+	}
+	if old, err := s.Q.GetBatch(ctx, b.ID); err != nil || old.State != "resolved_retry" {
+		t.Fatalf("%+v %v", old, err)
 	}
 }
 
 func TestRecoveryAndResolveSubmitted(t *testing.T) {
 	s, c := fixture(t)
+	// 重啟恢復後仍需退避，避免恢復即重播；本案例驗證人工確認已提交。
+	c.RetryBackoff = time.Hour
 	ctx := context.Background()
 	m := enqueue(t, s, "gm", "body")
 	b := sqlc.Batch{ID: NewID("batch-"), Recipient: "gm", Pane: "wC:p5", BaselineSeq: 1, CreatedAt: time.Now().UnixMilli()}
@@ -285,7 +355,7 @@ func TestRecoveryAndResolveSubmitted(t *testing.T) {
 		t.Fatal(err)
 	}
 	if h.count() != 0 {
-		t.Fatal("replayed after restart")
+		t.Fatal("replayed during retry backoff")
 	}
 	if err := s.Resolve(ctx, b.ID, "submitted", "confirmed prompt submitted"); err != nil {
 		t.Fatal(err)

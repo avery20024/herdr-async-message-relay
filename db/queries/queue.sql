@@ -88,3 +88,22 @@ SELECT DISTINCT sender FROM messages ORDER BY sender;
 
 -- name: HistoricalRecipients :many
 SELECT DISTINCT recipient FROM messages ORDER BY recipient;
+
+-- name: HeadPendingMessages :many
+SELECT * FROM messages WHERE recipient = ? AND state IN ('queued','uncertain')
+ORDER BY seq LIMIT ?;
+
+-- name: ClaimPendingMessage :execrows
+UPDATE messages SET state = 'dispatching', batch_id = ? WHERE id = ? AND state IN ('queued','uncertain');
+
+-- name: MessageAttempts :one
+SELECT COUNT(*) AS attempts FROM batch_members WHERE message_id = ?;
+
+-- name: SupersedeBatch :execrows
+UPDATE batches SET state = 'resolved_retry', updated_at = ?, detail = ? WHERE id = ? AND state = 'uncertain';
+
+-- name: RecoverBatch :execrows
+UPDATE batches SET state = 'uncertain', updated_at = ?, detail = ? WHERE id = ? AND state = 'dispatching';
+
+-- name: RecoverBatchMessages :exec
+UPDATE messages SET state = 'uncertain' WHERE batch_id = ? AND state = 'dispatching';
