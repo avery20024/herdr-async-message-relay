@@ -30,6 +30,11 @@ type Model struct {
 	preferencesStore                  PreferencesStore
 	preferencesOpen, configUnreadable bool
 	preferenceField                   int
+	guardSettings                     deliver.GuardSettings
+	guardDraft, guardReady, guardBusy bool
+	guardSaving, guardUnconfirmed     bool
+	guardGeneration                   uint64
+	guardError                        string
 	configError, configNotice         string
 	root                              string
 	width, height                     int
@@ -184,6 +189,8 @@ func (m *Model) clearDraftField() {
 func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	defer m.clampLayout()
 	switch msg := message.(type) {
+	case guardMsg:
+		m.guardUpdate(msg)
 	case tea.BackgroundColorMsg:
 		m.backgroundKnown = true
 		m.dark = msg.IsDark()
@@ -255,7 +262,13 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if key == "ctrl+r" {
+			if m.guardBusy {
+				return m, nil
+			}
 			m.reloadPreferences()
+			if m.preferencesOpen {
+				return m, m.guardRequest(false)
+			}
 			return m, nil
 		}
 		if key == "?" || key == "shift+/" || key == "shift+?" {
@@ -270,8 +283,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.preferencesOpen {
-			m.preferencesKey(key)
-			return m, nil
+			return m, m.preferencesKey(key)
 		}
 		if m.popup {
 			switch key {
@@ -299,7 +311,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "P", "shift+p":
 			return m, m.applyFilters(Filter{})
 		case "ctrl+p":
-			m.openPreferences()
+			return m, m.openPreferences()
 		case "ctrl+f":
 			m.popup = true
 			m.draft = m.filter

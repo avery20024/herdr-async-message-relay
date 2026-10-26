@@ -29,7 +29,7 @@ func TestFooterTailBudgetAcrossScreensAndWidths(t *testing.T) {
 								tail = m.text("Filters") + " 1/3"
 							}
 							if m.preferencesOpen {
-								tail = m.text("Preferences") + " 1/2"
+								tail = m.text("Preferences") + " 1/3"
 							}
 							switch state {
 							case "reload":
@@ -112,12 +112,12 @@ func TestFooterRegressionCountsLabelsAndFeedback(t *testing.T) {
 	m.configNotice = ""
 	m.preferencesOpen = true
 	m.width = 40
-	if footer := ansi.Strip(m.footerLine()); !strings.Contains(footer, "Preferences 1/2") {
+	if footer := ansi.Strip(m.footerLine()); !strings.Contains(footer, "Preferences 1/3") {
 		t.Fatal("40-column preferences label regression", footer)
 	}
 	m.language = i18n.TraditionalChinese
 	m.width = 30
-	if footer := ansi.Strip(m.footerLine()); !strings.Contains(footer, "偏好設定 1/2") {
+	if footer := ansi.Strip(m.footerLine()); !strings.Contains(footer, "偏好設定 1/3") {
 		t.Fatal("30-column preferences label regression", footer)
 	}
 	m.preferencesOpen = false

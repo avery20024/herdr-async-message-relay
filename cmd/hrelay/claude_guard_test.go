@@ -14,7 +14,7 @@ func TestClaudeGuardCLIWithoutService(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(c.Root, "角色", "gm"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(t.Context(), []string{"--root", c.Root, "claude-guard", "--role", "gm", "enable"}); err != nil {
+	if err := run(t.Context(), []string{"--root", c.Root, "claude-guard", "--team", "enable"}); err != nil {
 		t.Fatal(err)
 	}
 	input, err := os.CreateTemp(t.TempDir(), "event")

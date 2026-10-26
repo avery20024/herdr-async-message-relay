@@ -106,13 +106,12 @@ func TestIdentityAndCorruptionFailClosed(t *testing.T) {
 		t.Fatal("corruption reset")
 	}
 }
-func TestOptInAndDisable(t *testing.T) {
+func TestDefaultOnAndDisable(t *testing.T) {
 	m := Manager{Dir: t.TempDir()}
 	release, enabled, err := m.Acquire(t.Context(), "gm", "wC:p5", "")
-	if err != nil || enabled {
-		t.Fatalf("%v %v", enabled, err)
+	if err == nil || !enabled || release != nil {
+		t.Fatalf("missing Hooks should defer: %v %v", enabled, err)
 	}
-	release()
 	if err := m.Configure(t.Context(), "gm", true); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +162,7 @@ func TestBadInput(t *testing.T) {
 		}
 	}
 }
-func TestMissingStateAndReenableAreNotReady(t *testing.T) {
+func TestMissingStateDefersAndReenablePreservesObservation(t *testing.T) {
 	m := setup(t)
 	apply(t, m, "SessionStart", "")
 	if err := os.Remove(filepath.Join(m.Dir, "gm", "state.json")); err != nil {
@@ -177,9 +176,15 @@ func TestMissingStateAndReenableAreNotReady(t *testing.T) {
 	if err := m.Configure(t.Context(), "gm", true); err != nil {
 		t.Fatal(err)
 	}
-	allowed(t, m, false)
-	apply(t, m, "SessionStart", "")
 	allowed(t, m, true)
+	apply(t, m, "PreToolUse", "q1")
+	if err := m.ConfigureTeam(t.Context(), false); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.ConfigureTeam(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	allowed(t, m, false)
 }
 
 func TestReenableDoesNotResetPending(t *testing.T) {

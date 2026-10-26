@@ -32,13 +32,13 @@ func buildCommandHelpTopics() map[string]commandHelp {
 			examples: []string{"hrelay help send", "hrelay --lang zh-TW help service restart", "hrelay cli install --help"},
 		},
 		"claude-guard": {
-			syntax: "claude-guard --role ROLE [--pane ID] enable|disable|status",
+			syntax: "claude-guard --team enable|disable|status; claude-guard --role ROLE status",
 			options: []helpOption{
+				{"team", "", "team-wide interception policy"},
 				{"role", "ROLE", "explicit recipient role"},
-				{"pane", "ID", "Claude pane ID; defaults to HERDR_PANE_ID"},
 			},
-			notes:    []string{"Experimental opt-in guard; --role is required and must name an existing role directory.", "enable preserves pending state; a new binding requires SessionStart. disable restores Herdr-only gating.", "status reads policy and state; malformed policies fail closed. No service is started."},
-			examples: []string{"hrelay --root /absolute/team claude-guard --role gm status", "hrelay --root /absolute/team claude-guard --role gm enable"},
+			notes:    []string{"Team interception defaults on; Hooks record even when interception is off.", "Switching policy preserves observations; missing SessionStart is not ready.", "status reads policy and state; malformed policies fail closed. No service is started."},
+			examples: []string{"hrelay --root /absolute/team claude-guard --role gm status", "hrelay --root /absolute/team claude-guard --team disable"},
 		},
 		"claude-hook": {
 			syntax: "claude-hook --role ROLE [--pane ID] < event.json",
@@ -46,7 +46,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 				{"role", "ROLE", "explicit recipient role"},
 				{"pane", "ID", "Claude pane ID; defaults to HERDR_PANE_ID"},
 			},
-			notes:    []string{"Experimental synchronous hook; reads one Claude event from stdin, never an answer.", "--role is required; --pane defaults to HERDR_PANE_ID. Hook failures exit 2.", "Do not install these hooks in global Claude settings; missing context can block unrelated questions.", "Use only with a verified role/session binding; never synthesize ready events for production panes."},
+			notes:    []string{"Experimental synchronous hook; reads one Claude event from stdin, never an answer.", "--role is required; --pane defaults to HERDR_PANE_ID. Recording failures warn only when interception is explicitly off; otherwise exit 2.", "Do not install these hooks in global Claude settings; missing context can block unrelated questions.", "Use only with a verified role/session binding; never synthesize ready events for production panes."},
 			examples: []string{"hrelay --root /absolute/test-team claude-hook --role gm --pane REAL_TEST_PANE < event.json"},
 		},
 		"version": {
@@ -87,7 +87,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 				"? opens the concise keyboard-shortcut dialog; Esc or ? closes and returns to the previous screen.",
 				"In help: j/k or arrows scroll, u/d or PgUp/PgDn page, g/G or Home/End jump to top/bottom.",
 				"Ctrl+F opens filters; Enter applies and Esc cancels.",
-				"Ctrl+P opens Preferences (UI language and theme); Enter saves, Esc cancels.",
+				"Ctrl+P opens Preferences (UI language, theme, team interception); Enter saves, Esc cancels the draft.",
 				"Ctrl+R reloads shared preferences without refreshing messages; other UIs do not auto-sync.",
 				"Preferences use the user config directory; HERDR_RELAY_UI_CONFIG overrides with an absolute file path.",
 				"Themes: Terminal (default), Catppuccin Latte, Dracula, Rose Pine, Vesper.",

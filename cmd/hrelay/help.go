@@ -23,7 +23,7 @@ var helpCommands = []helpEntry{
 	{"service ensure|start|stop|restart|status|restore|list", "Advanced service controls; restore unpaused registrations or list services."},
 	{"cli install [--bin-dir ABSOLUTE_PATH]", "Install or repair the stable native CLI."},
 	{"serve", "Run the relay in the foreground."},
-	{"claude-guard --role ROLE enable|disable|status", "Experimental: configure or inspect a role's Claude question guard."},
+	{"claude-guard --team enable|disable|status", "Configure team interception; --role ROLE status inspects observations."},
 	{"claude-hook --role ROLE [--pane ID]", "Experimental: read a Claude hook event from stdin; no service startup."},
 	{"resolve --batch ID --action retry|submitted", "Resolve an uncertain batch only after inspection; requires --note and --confirm."},
 }

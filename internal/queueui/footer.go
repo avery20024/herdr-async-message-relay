@@ -64,7 +64,7 @@ func (m *Model) footerLine() string {
 		tail = fmt.Sprintf("%s %d/3", m.text("Filters"), m.field+1)
 	}
 	if m.preferencesOpen {
-		tail = fmt.Sprintf("%s %d/2", m.text("Preferences"), m.preferenceField+1)
+		tail = fmt.Sprintf("%s %d/3", m.text("Preferences"), m.preferenceField+1)
 	}
 	tailStyle := m.styles.muted
 	if m.lastError != "" {

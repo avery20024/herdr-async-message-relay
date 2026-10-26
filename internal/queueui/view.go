@@ -67,6 +67,14 @@ func (m *Model) text(s string) string {
 
 var labels = map[string]string{
 	"Preferences": "偏好設定", "Language": "語系", "Theme": "主題", "Auto": "自動", "Terminal (default)": "終端預設",
+	"Team guard unavailable.":                                   "團隊攔截設定無法使用。",
+	"Team save unconfirmed; reload before retrying.":            "團隊設定儲存未確認，請先重載再重試。",
+	"Claude interception (team)":                                "Claude 問答攔截（全團隊）",
+	"Recording continues when off.":                             "關閉攔截仍持續記錄問答時間。",
+	"Observed %d · pending %d · uninitialized %d · abnormal %d": "已觀測 %d · 問答中 %d · 未初始化 %d · 異常 %d",
+	"Observed events are not a Hooks health guarantee.":         "已觀測事件不代表 Hooks 持續健康；未初始化須接線／新會話。",
+	"Local preferences saved; team save pending.":               "本機偏好已儲存；團隊設定儲存中。",
+	"Loading": "載入中", "Unavailable": "無法使用", "On": "開", "Off": "關", "Reload required": "須重載",
 	"Preferences storage unavailable.": "偏好設定儲存位置無法使用。", "Unable to load preferences.": "無法載入偏好設定。", "Unable to save preferences.": "無法儲存偏好設定。", "Preferences reloaded.": "已重載偏好設定。", "Preferences saved.": "已儲存偏好設定。",
 	"↑↓ field ←→ value Enter save Esc cancel ^R reload":                                                             "↑↓選項 ←→設定 Enter儲存 Esc取消 ^R重載",
 	"j/k select u/d list U/D body [] data r refresh P clear filters ^F filters ^P prefs ^R config ^W auto q ? help": "j/k選列 u/d半頁 U/D本文 []資料 r刷新 P 清除篩選 ^F篩選 ^P設定 ^R重載 ^W自動 q離開 ?說明",

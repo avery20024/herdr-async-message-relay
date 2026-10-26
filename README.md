@@ -37,7 +37,7 @@ hrelay --root "$TEAM" server on
 hrelay --root "$TEAM" ui
 ```
 
-For a configured environment with `DELIVER_ROOT`, just run `hrelay ui`. The UI is read-only for the queue: it does not start or upgrade workers, send messages, resolve uncertain batches or change dispatch settings. CLI and worker must both be v0.5.0-compatible; a plugin update does not replace an already-running worker.
+For a configured environment with `DELIVER_ROOT`, just run `hrelay ui`. The UI does not start or upgrade workers, send messages or resolve uncertain batches. **Unreleased development change:** Ctrl+P can explicitly save a team-wide, default-on Claude question interception policy; scoped Hooks keep recording question times when interception is off. This changes worker behavior, not queue records or local theme settings. Both UI and worker need the new implementation. See [setup, migration and limitations](docs/claude-question-guard.md). CLI and worker must both be v0.5.0-compatible; a plugin update does not replace an already-running worker.
 
 See [UI controls and preferences](docs/ui.md). For scripts, JSON inspection, first-time service setup, CLI language flags or recovery, see the [CLI operations and advanced reference](docs/cli-reference.md).
 
@@ -134,7 +134,7 @@ Recipients are matched to `<team-root>/角色/<role>` (the literal directory nam
 - [UI controls, themes, preferences and limitations](docs/ui.md)
 - [CLI operations, inspection, services, configuration, recovery and development](docs/cli-reference.md)
 - [Agent setup and SOP integration](docs/agent-usage.md)
-- [Experimental Claude question guard](docs/claude-question-guard.md) — opt-in; not a guarantee against every race
+- [Experimental Claude question guard](docs/claude-question-guard.md) — scoped Hooks; development team-policy change documented separately; not a guarantee against every race
 
 Queue history can contain full messages and sensitive paths. Inspect and redact screenshots or exports before sharing; the local OS account is the trust boundary. See [security and privacy](docs/cli-reference.md#security-and-privacy).
 

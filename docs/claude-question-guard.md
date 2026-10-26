@@ -1,81 +1,98 @@
-# Experimental Claude question guard
+# Claude question observation and team interception
 
-This is an **experimental, opt-in feature introduced in v0.4.0**, not a fix guarantee or a replacement for Herdr's blocked-state detection. It does not install hooks, change Claude settings, restart a relay, or notify an agent automatically. It is opt-in **per recipient role**.
+> **Development change, not yet released or deployed.** v0.5.1 and earlier use per-role opt-in. The implementation described here introduces a **team-wide, default-on** interception policy. Updating the CLI alone does not upgrade a running worker or install Hooks.
 
-## What it protects
+This is an additional defense for Claude Code `AskUserQuestion`, not a fix guarantee or a replacement for Herdr's blocked-state detection. Hooks installation remains explicit and scoped; the plugin never changes Claude settings or restarts agents automatically.
 
-Claude Code's synchronous `PreToolUse` hook for `AskUserQuestion` records a pending tool call before the question executes. The worker checks that record before claiming messages. A successful `PostToolUse` clears only the matching tool call. Multiple questions remain blocked until all matching completions arrive.
+## Recording and interception are separate
 
-For a role whose policy directory has never been created, valid supported hooks are silent no-ops and create no guard state; delivery keeps its existing Herdr-only behavior. This permits shared hook settings for existing role directories without implicitly enabling every role. Once the policy directory exists, missing or invalid policy is an error, not an opt-out. Root, role, pane, and event validation still apply.
+- Every configured, valid Hook records lifecycle events, even when team interception is **off**. No prior per-role `enable` is needed.
+- The **team interception** setting defaults to **on** when `team-policy.json` is absent. Ctrl+P in `hrelay ui` loads it from the worker. Select **Claude interception (team)** with up/down, change with left/right, and press Enter to save. Esc discards the draft. This setting affects the current canonical team root, not every team on the machine.
+- When on, Claude delivery requires both Herdr idle/done and a matching ready Hook record. Missing initialization, pending questions, unknown/ended state, corrupt records, or session/pane mismatch leave messages queued. Other agent kinds do not use the Claude gate. Classification depends on Herdr reporting `agent_session.agent = claude`; the relay does not infer Claude identity from display names.
+- When off, notification delivery uses Herdr-only gating. `blocked` still prevents delivery. The switch does not answer a question, clear pending state, or claim human approval.
+- Switching off/on never resets observations. A question observed while off still blocks after re-enabling until its matching completion arrives. No timeout invents a completion.
+- Guard state is **observed evidence, not a Hook-health heartbeat**. A previously ready record does not prove that Hooks remain installed or functioning.
 
-The worker requires both its normal Herdr idle/done gate and the hook gate. Hook state must match the exact Herdr pane and the Claude `agent_session` (`agent: claude`, `kind: id`, `value: session_id`). Missing session metadata, missing/corrupt state, pending questions, ended sessions, and unknown states defer delivery. No batch is claimed and messages stay queued. Other roles keep working.
+The UI shows counts of observed, pending, uninitialized, and abnormal roles on larger terminals. Uninitialized means no usable lifecycle record; it cannot distinguish missing Hooks from a configured session that has not started. Counts include existing role directories, not just currently running Claude seats. On small terminals the G field shows the setting or an error; use a larger terminal or CLI status for diagnostics.
 
-A per-role advisory lock serializes cooperative hook writes with delivery. For guarded delivery, the worker holds it while rechecking live role/pane/session/status/state sequence, claiming, submitting, and recording the result. This reduces the read/submit gap for synchronous hooks: if the pre-hook wins, delivery defers; if submission wins, the pre-hook cannot finish and display its question until the lock is released. A hook lock wait exceeding two seconds returns exit 2 rather than silently allowing the tool. This may reject/delay a question during a slow submission; it does **not** answer it.
+### Consistency and failures
 
-## Setup (manual, isolated evaluation first)
+The setting is saved atomically under a team advisory lock. Worker submissions hold a shared team lock and the target role's lock until the result is recorded. Setting changes take the exclusive team lock, so an in-flight submission finishes before the switch is saved. Unrelated guarded roles can submit concurrently. Hooks take only their role lock, including when interception is off.
 
-Use a v0.4.0-or-later binary (or a built development binary), not an installed v0.3.0 binary. Both worker and hooks must use this implementation and the **same canonical team root and state directory**. Replacing only the CLI does not upgrade an existing worker. Production service upgrades need separate authorization.
+The worker reads the policy for every Claude dispatch, without restart. Concurrent explicit saves use last-writer-wins. An unchanged draft is not written, avoiding accidental resets by another UI instance. A save response lost to timeout is **unconfirmed**, not proof of failure: Ctrl+R reloads the actual policy before another edit. Older workers lacking the settings API show unavailable; the UI never writes a guessed default to them. Local language/theme saves are separate from team-policy saves; a partial save is reported.
 
-1. Prepare the existing `角色/<role>` directory and a separate test state directory.
-2. Configure the hook example below in the **test Claude session's** settings, merging with existing hooks instead of overwriting them. **Do not put these hooks in global/user-level Claude settings.** Keep them scoped to the intended Herdr role's test session: missing required environment variables (including `HERDR_RELAY_FROM` or `HERDR_PANE_ID`) cause exit 2 and can block AskUserQuestion in unrelated or non-Herdr sessions. For an enabled role, PreToolUse before a valid SessionStart also blocks the question.
-3. Explicitly enable the role before starting that session:
+Hooks remain synchronous. With interception on (or a policy read error), validation/storage/locking failures exit 2, which may reject or delay AskUserQuestion; they never answer it. When interception is explicitly off, valid event recording failures warn on stderr and return success, so disabling can bypass a broken recorder. Missing required launcher variables, invalid CLI context, and malformed input still fail; the outer launcher also converts launch failures to exit 2. Recording is therefore not guaranteed during failures, missing events, or killed handlers.
+
+## Scoped setup and migration
+
+**Do not install the example into global/user Claude settings.** It requires team, role and Herdr pane context. In an unrelated Claude session, missing environment variables can block tools. Merge with the intended role/session's existing settings; do not overwrite other Hooks.
+
+1. Build/use the matching development binary and worker in an isolated test root/state directory first.
+2. Set the same canonical team root and state directory for worker and Hooks. Prepare an existing `角色/<role>` directory. Use a verified absolute binary path, not an ambiguous PATH entry.
+3. Merge [`../examples/claude-question-guard.settings.json`](../examples/claude-question-guard.settings.json) into that Claude session's scoped configuration. Required inherited context:
 
 ```sh
 export DELIVER_ROOT=/absolute/test-team
 export DELIVER_STATE_DIR=/absolute/test-state
 export HERDR_RELAY_FROM=gm
 export HRELAY_GUARD_BIN=/absolute/development-checkout/bin/hrelay
-# HERDR_PANE_ID must be the real Claude pane inherited from Herdr.
-"$HRELAY_GUARD_BIN" --root "$DELIVER_ROOT" claude-guard --role gm enable
+# HERDR_PANE_ID must be inherited from the actual Claude pane.
 ```
 
-4. Start a **new** test Claude session so SessionStart binds its session and pane. Enabling a live session without a start event intentionally leaves it blocked. Do not simulate a ready event for a production pane.
-5. Run the prototype worker with the same root/state in an explicitly managed test environment; no production queue is needed for unit tests.
+4. Start a genuinely **new** Claude session. Its SessionStart binds the actual session and pane. Do not synthesize a ready event for a production pane. Enabling on an existing session with no start record intentionally leaves notifications queued; a first question without a valid start can also fail its synchronous Hook.
+5. Validate question start, pending queue, human completion, and delivery in isolation before a separately authorized production upgrade.
 
-See [`../examples/claude-question-guard.settings.json`](../examples/claude-question-guard.settings.json). `HERDR_RELAY_FROM` is used here only because the hook executes inside the explicitly configured recipient Claude role. The worker never guesses this binding from a display name. Use a verified absolute binary path, not a PATH entry that might select a released binary lacking this feature.
+Keep Hooks synchronous: **do not set `async: true`**. Success emits no permission decision or answer. The launcher example converts missing variables, binary errors and nonzero handler results to exit 2. Killed/timed-out Hooks or Claude ignoring errors remain limitations. Do not promise protection for every race.
 
-Hooks must be synchronous: **do not set `async: true`**. Hook success emits nothing, grants no tool permission, and supplies no answer. Hook errors exit 2; on PreToolUse this blocks the call. The settings example executes parameter expansion and the binary inside a subshell, with a parent-shell `|| exit 2`. Missing/empty required variables, a missing/non-executable binary, and nonzero CLI exits therefore return 2 while preserving stdin and argument boundaries. This does not guarantee a blocking result if Claude kills the whole handler, times out, never invokes it, or ignores its failure; those lifecycle assumptions still require native validation. Claude versions that support `onFailure: "block"` can additionally enforce launcher/timeout failures, but that setting is not assumed in this prototype. Verify your actual Claude version's behavior before deployment.
+### Upgrade from per-role opt-in
 
-## Inspect and recover
+This is a behavior change, not a drop-in production restart:
+
+- Preserve `<state-dir>/claude-guard/<role>/state.json` and its pending/session evidence.
+- Old `<role>/policy.json` files are retained but **no longer consulted**. A legacy role `enabled:false` does not override the new default-on team policy. Old role enable/disable CLI requests are rejected with an instruction to use `--team`, rather than silently changing every role.
+- Absent team policy means on, including previously unconfigured Claude roles. They defer until properly initialized. Before upgrading an unprepared team, explicitly arrange an initial team-off policy using the new binary in the same state directory, then install scoped Hooks/new sessions and enable after validation. This is a deliberate rollout choice, not a hidden migration default.
+- No deployment, settings installation, agent restart, or service switch is implicit in this change.
+- Valid legacy state remains readable; completed legacy questions may have no start timestamp, so duration cannot be reconstructed. Corrupt state is not reset by toggling the switch.
+
+## CLI operations
+
+These commands do not start or upgrade a service:
 
 ```sh
-"$HRELAY_GUARD_BIN" --root "$DELIVER_ROOT" claude-guard --role gm status
+hrelay --root /absolute/team claude-guard --team status
+hrelay --root /absolute/team claude-guard --team disable
+hrelay --root /absolute/team claude-guard --team enable
+hrelay --root /absolute/team claude-guard --role gm status
 ```
 
-This reports the policy, phase, session, pane, pending tool IDs and timestamp. No question text or answers are persisted. Read errors remain errors, not ready. Existing queue `status` output does not embed guard state; use the separate guard command. Worker deferral details use debug logging.
+Role status returns team policy and the stored state, not live seat identity or a read receipt. Missing/corrupt role state is an error. UI observations label missing initialization separately from unknown, ended and read errors.
 
-- `SessionStart` initializes a new binding as `ready`. For the same session/pane it preserves existing state, including unknown/pending/ended; resume or compaction is not proof a question ended.
-- `PostToolUseFailure` marks the binding `unknown`, even if a later success arrives. It does not automatically unblock.
-- `SessionEnd` marks the session `ended`. Missing end events still cannot match a new session ID. Main-session lifecycle is not cleared by subagent SessionEnd; subagent question tool IDs also contribute to pending state.
-- Claude's docs explicitly note that cancelling a running tool does not necessarily fire PostToolUseFailure. If completion is missing, the pending record remains indefinitely; **no timeout changes it to ready**.
-- For interrupted/ended/corrupt state: inspect the actual UI and lifecycle first. Start a genuinely new session when safe. If corruption prevents initialization, deliberate disable/enable resets to unknown, followed by a new session; do not use a reset to bypass an open question.
-- Repeated `enable` preserves pending state. Re-enabling after `disable` invalidates any old ready state and requires SessionStart again.
-- To deliberately opt out after assessing the risk:
+## Storage and timestamp evidence
 
-```sh
-"$HRELAY_GUARD_BIN" --root "$DELIVER_ROOT" claude-guard --role gm disable
-```
+Private local files under `<state-dir>/claude-guard/`:
 
-Disabling restores **Herdr-only gating**, not a safe resolution of an outstanding question. Do not disable while a question is open. Remove the optional hooks only as part of a coordinated rollback. Deleting the entire role policy directory also removes opt-in protection and is not a recovery procedure.
+- `team-policy.json`: strict `{"version":1,"enabled":true}` (or false). Both fields are required; duplicate/unknown fields, unsupported versions, nulls and malformed JSON are rejected. Read errors never become an opt-out. A corrupt policy requires deliberate inspected repair; normal saves do not overwrite it.
+- `team.lock`: shared dispatch/exclusive setting-change advisory lock.
+- `<role>/state.json`: latest phase, session/pane, pending IDs/start times, update time, and up to **20 recent question summaries** for bounded diagnostics.
+- `<role>/events.jsonl`: **persistent append-only lifecycle events**, including question start/completion/failure timestamps and available duration. The 20-summary limit does not truncate this event history. No automatic retention/rotation is implemented; size grows with observed events. Back up/rotate only during an explicitly coordinated stop of that role's event writers; do not delete live evidence to unlock delivery.
+- `<role>/guard.lock`: serializes that role's event writes and guarded submissions.
 
-## Storage and limits
+Times are Unix milliseconds; render/report them in Asia/Taipei (+08:00). Start is the observed PreToolUse time, not necessarily when the dialog first became visible; end is the observed matching success/failure, not a guaranteed human answer time. Missing completion remains pending. A new session or SessionEnd marks outstanding summaries interrupted without fabricating an end time or elapsed duration. No question text, tool input, answer, or message body is stored.
 
-Records live below `<state-dir>/claude-guard/<role>/`: `policy.json`, `state.json`, and `guard.lock`. Private directories/files, no-follow file opens, serialized read/modify/write, fsynced temporary records and atomic renames are used. Do not place these in the plugin checkout or commit them. The normal local-OS-account trust boundary applies; this is not authentication against another process running as the same account. Existing directory permissions are not automatically tightened, and role-directory symlinks are not a security boundary.
+History is fsynced before the state replacement, but the two files are not one transaction. A crash can leave a received event in the log without the matching latest state. Treat the log as observation evidence, not an automatic unlock command. There is no exactly-once audit guarantee; repeated Hook invocations can repeat events. A killed partial write may leave an incomplete final JSONL line; preserve it as diagnostic evidence rather than treating it as completed state.
 
-Policies use the exact schema `{"version":1,"enabled":true}` (or explicit `false`). Both fields are mandatory and non-null, version must be 1, and duplicate, unknown, or misspelled fields are rejected. Malformed/unsupported policies fail closed in hooks, worker acquisition, and status; `enable` does not silently repair them. Only an explicit valid `enabled:false` policy opts out.
+Input is limited to 1 MiB, state to 64 KiB, and pending questions to 100. Large identifiers or many simultaneous questions can hit the state-size limit before the count limit. Identifiers are limited; regular files/no-follow opens, private file modes and atomic state/policy replacements are used. The local OS account remains the trust boundary; this is not authentication against another process under the same account. No DB migration, new dependency, external model call or TCP listener is added.
 
-Unreleased prototype policies without `version` are intentionally rejected, not silently migrated. After inspecting the actual session and ensuring no question is open, deliberate `disable` writes a valid version-1 opt-out policy; `enable` then invalidates old ready state, and a genuinely new SessionStart is required. Preserve evidence before repair and do not delete the policy directory to force delivery.
+## Recovery and rollback
 
-Hook input is limited to 1 MiB; only lifecycle identifiers are stored. Up to 100 pending questions are supported. No DB migration, new dependency, external model call, TCP listener, background process or service registry change is required.
+Inspect actual Claude UI, session/pane identity, state and event records first. For lost completion or unknown state, start a genuinely new session when safe. Repeated SessionStart for the **same** session/pane preserves pending/unknown/ended evidence; resume/compaction is not proof a question ended.
 
-## Known limitations / not yet validated
+Ctrl+P off (or `--team disable`) restores Herdr-only notification gating while continuing observation. This bypasses extra protection, not safely resolving an open question. Do not casually toggle during an unanswered dialog. Keep evidence and scoped Hooks when diagnosing. Removing Hooks is a separately coordinated rollback, not a setting change. Before downgrading, inspect questions and set the old version's per-role policies deliberately: old binaries ignore the new team policy, so their behavior can differ.
 
-- A real Claude Code v2.1.308 / Herdr 0.9.3 test confirmed SessionStart identity binding, a pending AskUserQuestion, queued notification while the question remained open, matching completion after the human selected the second option, and visible notification delivery afterwards. Pending cleared at 17:46:40.239 +08:00 on 2026-10-23; the delivery batch was created at 17:46:42.647 +08:00. Herdr correctly reported blocked, so this did not reproduce idle misclassification. Claude declined the notification's requested acknowledgement, so the content-handling assertion did not pass. Cancellation, interruption and native contention still need validation. Unit tests cover additional cases with synthetic hook payloads, fake Herdr and temporary SQLite.
-- No official atomic query-and-submit API is added. Safety relies on hooks actually being configured, synchronous, invoked and completed before the UI proceeds. Missing/disabled hooks, a killed/timed-out handler, an unlaunchable binary, or Claude ignoring a failed hook can defeat that assumption. A previously ready record is **not proof hooks remain healthy**.
-- Only AskUserQuestion is covered. Permission approvals, ExitPlanMode, directory-trust dialogs, MCP elicitation and other interactive surfaces still rely on Herdr. This must not be marketed as protection for every blocked dialog.
-- There is no automatic retroactive query of a running Claude CLI, no heartbeat proof, no hook repair, no role registry beyond existing CWD routing, and no exactly-once delivery guarantee.
-- Missing state defers; lost hooks can leave notifications stuck. Human inspection is preferable to automatic unlocking.
-- Advisory flock polling has no fairness guarantee. Contending hooks may hit their two-second deadline and reject/delay the question; slow Herdr operations inside the submission lock can contribute. Mutual exclusion is not a liveness guarantee.
-- Do not poll `Notification`/`permission_prompt` as a substitute: it is a different lifecycle and can arrive after a delay.
+## Limits and historical validation
 
-References: [Claude Hooks reference](https://code.claude.com/docs/en/hooks), [Herdr #2868](https://github.com/herdrdev/herdr/issues/2868).
+Only AskUserQuestion is covered. Permission approvals, ExitPlanMode, trust dialogs, MCP elicitation and other interactive surfaces still depend on Herdr. Cancelled tools may omit PostToolUseFailure, so notifications can remain deferred indefinitely. Missing Hooks, launch/timeout failures, and non-atomic Herdr snapshot/submit behavior are not solved by a switch.
+
+A previous implementation was tested with real Claude Code v2.1.308 / Herdr 0.9.3 on 2026-10-23: pending question kept the notification queued; completion was observed at 17:46:40.239 +08:00 and the batch was created at 17:46:42.647 +08:00. Herdr itself correctly reported blocked, so idle misclassification was not reproduced. Claude declined the requested acknowledgement. That test is not native validation of this new team-policy/UI implementation. Cancellation, interruption, contention and supported OS behavior still require independent/native validation.
+
+References: [Claude Hooks](https://code.claude.com/docs/en/hooks), [Herdr #2868](https://github.com/herdrdev/herdr/issues/2868).

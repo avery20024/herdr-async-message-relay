@@ -49,6 +49,8 @@ func decode(w http.ResponseWriter, r *http.Request, limit int64, target any) boo
 func (a API) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/messages", a.browseMessages)
+	mux.HandleFunc("GET /v1/claude-guard", a.guardSettings)
+	mux.HandleFunc("PUT /v1/claude-guard", a.guardSettings)
 	mux.HandleFunc("POST /v1/messages", func(w http.ResponseWriter, r *http.Request) {
 		var req SendRequest
 		if !decode(w, r, int64(6*a.Config.BatchBytes+4096), &req) {

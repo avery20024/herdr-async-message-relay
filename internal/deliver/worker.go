@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -79,18 +80,25 @@ func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 	if a.Status != "idle" && a.Status != "done" {
 		return nil
 	}
-	guardCtx, cancel := context.WithTimeout(ctx, time.Second)
-	session := ""
-	if a.Session.Agent == "claude" && a.Session.Kind == "id" {
-		session = a.Session.Value
+	enabled := false
+	// 已有 Claude 觀測卻缺失類型中繼資料時，不能把未知身分當作非 Claude 放行。
+	_, roleGuardErr := os.Lstat(filepath.Join(w.Config.StateDir, "claude-guard", role))
+	if a.Session.Agent == "claude" || (a.Session.Agent == "" && !errors.Is(roleGuardErr, os.ErrNotExist)) {
+		guardCtx, cancel := context.WithTimeout(ctx, time.Second)
+		session := ""
+		if a.Session.Kind == "id" {
+			session = a.Session.Value
+		}
+		release, guarded, err := (claudeguard.Manager{Dir: filepath.Join(w.Config.StateDir, "claude-guard")}).Acquire(guardCtx, role, a.Pane, session)
+		cancel()
+		if err != nil {
+			w.logOnce("guard:"+role, "Claude guard deferred; inspect Hooks or team preferences", "role", role, "error", err)
+			return nil
+		}
+		w.clearWarn("guard:" + role)
+		defer release()
+		enabled = guarded
 	}
-	release, enabled, err := (claudeguard.Manager{Dir: filepath.Join(w.Config.StateDir, "claude-guard")}).Acquire(guardCtx, role, a.Pane, session)
-	cancel()
-	if err != nil {
-		w.Log.Debug("Claude guard deferred", "role", role, "error", err)
-		return nil
-	}
-	defer release()
 	if enabled {
 		// 鎖內重新查核身分與狀態，避免沿用排程時的舊快照。
 		agents, err := w.Herdr.List(ctx)
