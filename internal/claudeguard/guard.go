@@ -339,9 +339,7 @@ func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
 			delete(s.Pending, e.ToolID)
 			delete(s.Started, e.ToolID)
 		case "PostToolUseFailure":
-			if !s.Pending[e.ToolID] {
-				return errors.New("unmatched question failure")
-			}
+			// 未配對的失敗代表可能漏掉開始事件；仍須保存 unknown，不沿用 ready。
 			s.finishQuestion(e.ToolID, "failed", true)
 			s.Phase = "unknown"
 		}
