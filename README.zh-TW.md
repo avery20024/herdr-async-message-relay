@@ -37,9 +37,9 @@ hrelay --root "$TEAM" server on
 hrelay --root "$TEAM" ui
 ```
 
-已設定 `DELIVER_ROOT` 的環境可直接執行 `hrelay ui`。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**尚未發布的開發異動：**`Ctrl+P` 可明確儲存團隊共用、預設開啟的 Claude 問答攔截開關；已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。這是 worker 行為設定，不是佇列內容或本機外觀設定，UI 與 worker 均須更新至新實作。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
+已設定 `DELIVER_ROOT` 的環境可直接執行 `hrelay ui`。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**v0.6.0 行為變更：**`Ctrl+P` 可明確儲存團隊共用、預設開啟的 Claude 問答攔截開關；已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。這是 worker 行為設定，不是佇列內容或本機外觀設定，團隊設定要求 UI 與 worker 均為 v0.6.0。團隊政策缺失時預設開啟，未初始化的 Claude 角色會延後通知，升級前須先確認遷移安排。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
 
-完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
+v0.6.0 另加入依滑鼠位置分區捲動、左下淡色說明置底、欄位值強調，以及 `gg`／`G` 跳至已載入首尾資料。變更與升級注意事項見 [v0.6.0 發布說明](docs/releases/v0.6.0.md)，完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
 
 ## UI 主題
 
@@ -111,7 +111,7 @@ wsl --install -d Ubuntu
 
 ### 其他安裝方式
 
-- 固定版本或回退可用 `herdr plugin install avery20024/herdr-async-message-relay --ref v0.5.0`；一般安裝省略 `--ref`，後續更新沿用安裝時記錄的 ref。
+- 固定版本或回退可用 `herdr plugin install avery20024/herdr-async-message-relay --ref v0.6.0`；一般安裝省略 `--ref`，後續更新沿用安裝時記錄的 ref。
 - 從 [Releases](https://github.com/avery20024/herdr-async-message-relay/releases) 下載平台套件，核對 `checksums.txt` 後解壓，保留附帶授權與第三方聲明。
 - 從 checkout 安裝、修復 PATH、升級行為與 checksum 信任邊界見 [安裝細節](docs/cli-reference.zh-TW.md#安裝細節)。
 
@@ -134,7 +134,7 @@ hrelay send gm 'Task 123 已備妥，請查核證據。'
 - [UI 鍵位、主題、偏好設定及限制（英文）](docs/ui.md)
 - [CLI 操作、查詢、服務、設定、復原及開發](docs/cli-reference.zh-TW.md)
 - [Agent 設定與 SOP 整合（英文）](docs/agent-usage.md)
-- [Claude 問答安全閘門](docs/claude-question-guard.md) — 明確啟用的實驗性功能，不保證排除所有競態
+- [Claude 問答安全閘門](docs/claude-question-guard.md) — v0.6.0 團隊攔截預設開啟，Hooks 仍需明確接線；不保證排除所有競態
 
 佇列歷史可能含完整訊息與敏感路徑，分享截圖或匯出前請先檢查遮蔽；安全邊界為本機 OS 帳號，詳見 [安全與隱私](docs/cli-reference.zh-TW.md#安全與隱私)。
 
