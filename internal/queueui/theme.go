@@ -90,11 +90,11 @@ func textViewport(lines []string, width, height, offset int) viewport.Model {
 	return v
 }
 func (m *Model) scrollText(metadata, down bool) {
-	lines, width, offset := m.detailLines(), m.detailWidth(), m.detailOffset
+	lines, width, height, offset := m.detailLines(), m.detailWidth(), m.detailPageHeight(), m.detailOffset
 	if metadata {
-		lines, width, offset = m.metadataLines(), m.metadataWidth(), m.metadataOffset
+		lines, width, height, offset = m.metadataLines(), m.metadataWidth(), m.metadataPageHeight(), m.metadataOffset
 	}
-	v := textViewport(lines, width, m.detailPageHeight(), offset)
+	v := textViewport(lines, width, height, offset)
 	if down {
 		v.PageDown()
 	} else {

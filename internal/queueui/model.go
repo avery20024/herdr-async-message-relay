@@ -49,6 +49,7 @@ type Model struct {
 	popup                             bool
 	helpOpen                          bool
 	helpOffset                        int
+	goTopPending                      bool
 	field                             int
 	auto                              bool
 	timer                             uint64
@@ -158,6 +159,16 @@ func (m *Model) moveSelection(delta int, halfPage bool) tea.Cmd {
 	return nil
 }
 
+// 只在目前已載入的資料內跳轉；即使選取不變，也取消舊分頁的延後選取。
+func (m *Model) jumpLoaded(index int) {
+	m.pendingFrom = ""
+	if len(m.rows) == 0 {
+		return
+	}
+	index = max(0, min(index, len(m.rows)-1))
+	m.moveSelection(index-m.selected, false)
+}
+
 // 草稿只有Enter套用；主畫面P也走同一路徑，避免重置漏掉游標／取消世代。
 func (m *Model) applyFilters(next Filter) tea.Cmd {
 	if m.filter == next {
@@ -205,7 +216,13 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.loading, cmd = m.loading.Update(msg)
 		return m, cmd
+	case tea.MouseWheelMsg:
+		m.goTopPending = false
+		return m, m.mouseWheel(msg)
+	case tea.MouseClickMsg, tea.MouseReleaseMsg:
+		m.goTopPending = false
 	case tea.WindowSizeMsg:
+		m.goTopPending = false
 		m.width, m.height = msg.Width, msg.Height
 	case tickMsg:
 		if !m.auto || uint64(msg) != m.timer {
@@ -257,6 +274,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		m.configNotice = ""
 		key := msg.String()
+		goTop := m.goTopPending
+		m.goTopPending = false
 		if key == "ctrl+c" || (key == "q" && ((!m.popup && !m.preferencesOpen && !m.helpOpen) || m.width < minimumWidth || m.height < minimumHeight)) {
 			m.cancelFetch()
 			return m, tea.Quit
@@ -308,6 +327,14 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch key {
+		case "g":
+			if goTop {
+				m.jumpLoaded(0)
+			} else {
+				m.goTopPending = true
+			}
+		case "G", "shift+g":
+			m.jumpLoaded(len(m.rows) - 1)
 		case "P", "shift+p":
 			return m, m.applyFilters(Filter{})
 		case "ctrl+p":
