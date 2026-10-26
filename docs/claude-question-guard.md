@@ -1,6 +1,6 @@
 # Claude question observation and team interception
 
-> **Development change, not yet released or deployed.** v0.5.1 and earlier use per-role opt-in. The implementation described here introduces a **team-wide, default-on** interception policy. Updating the CLI alone does not upgrade a running worker or install Hooks.
+> **v0.6.0 behavior change.** v0.5.1 and earlier use per-role opt-in. v0.6.0 introduces a **team-wide, default-on** interception policy. Publishing a release does not deploy it; updating the CLI alone does not upgrade a running worker or install Hooks.
 
 This is an additional defense for Claude Code `AskUserQuestion`, not a fix guarantee or a replacement for Herdr's blocked-state detection. Hooks installation remains explicit and scoped; the plugin never changes Claude settings or restarts agents automatically.
 
@@ -28,7 +28,7 @@ Hooks remain synchronous. With interception on (or a policy read error), validat
 
 **Do not install the example into global/user Claude settings.** It requires team, role and Herdr pane context. In an unrelated Claude session, missing environment variables can block tools. Merge with the intended role/session's existing settings; do not overwrite other Hooks.
 
-1. Build/use the matching development binary and worker in an isolated test root/state directory first.
+1. Use the matching v0.6.0 binary and worker in an isolated test root/state directory first.
 2. Set the same canonical team root and state directory for worker and Hooks. Prepare an existing `角色/<role>` directory. Use a verified absolute binary path, not an ambiguous PATH entry.
 3. Merge [`../examples/claude-question-guard.settings.json`](../examples/claude-question-guard.settings.json) into that Claude session's scoped configuration. Required inherited context:
 
@@ -36,7 +36,7 @@ Hooks remain synchronous. With interception on (or a policy read error), validat
 export DELIVER_ROOT=/absolute/test-team
 export DELIVER_STATE_DIR=/absolute/test-state
 export HERDR_RELAY_FROM=gm
-export HRELAY_GUARD_BIN=/absolute/development-checkout/bin/hrelay
+export HRELAY_GUARD_BIN=/absolute/path/to/v0.6.0/hrelay
 # HERDR_PANE_ID must be inherited from the actual Claude pane.
 ```
 

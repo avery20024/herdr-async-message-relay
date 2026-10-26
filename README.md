@@ -37,9 +37,9 @@ hrelay --root "$TEAM" server on
 hrelay --root "$TEAM" ui
 ```
 
-For a configured environment with `DELIVER_ROOT`, just run `hrelay ui`. The UI does not start or upgrade workers, send messages or resolve uncertain batches. **Unreleased development change:** Ctrl+P can explicitly save a team-wide, default-on Claude question interception policy; scoped Hooks keep recording question times when interception is off. This changes worker behavior, not queue records or local theme settings. Both UI and worker need the new implementation. See [setup, migration and limitations](docs/claude-question-guard.md). CLI and worker must both be v0.5.0-compatible; a plugin update does not replace an already-running worker.
+For a configured environment with `DELIVER_ROOT`, just run `hrelay ui`. The UI does not start or upgrade workers, send messages or resolve uncertain batches. **In v0.6.0:** Ctrl+P can explicitly save a team-wide, default-on Claude question interception policy; scoped Hooks keep recording question times when interception is off. This changes worker behavior, not queue records or local theme settings. Both UI and worker need v0.6.0 for team settings. Missing team policy defaults on; uninitialized Claude roles defer notifications, so review migration before upgrading. See [setup, migration and limitations](docs/claude-question-guard.md). CLI and worker must both be v0.5.0-compatible; a plugin update does not replace an already-running worker.
 
-See [UI controls and preferences](docs/ui.md). For scripts, JSON inspection, first-time service setup, CLI language flags or recovery, see the [CLI operations and advanced reference](docs/cli-reference.md).
+v0.6.0 also adds pointer-targeted wheel scrolling, pinned muted metadata notices, accented values, and `gg` / `G` jumps to the first / last currently loaded message. See [v0.6.0 changes and upgrade cautions](docs/releases/v0.6.0.md) and [UI controls and preferences](docs/ui.md). For scripts, JSON inspection, first-time service setup, CLI language flags or recovery, see the [CLI operations and advanced reference](docs/cli-reference.md).
 
 ## UI themes
 
@@ -111,7 +111,7 @@ Restart if requested and finish Ubuntu's first-run account setup, then run the *
 
 ### Other installation options
 
-- Pin or roll back with `herdr plugin install avery20024/herdr-async-message-relay --ref v0.5.0`. Normal installs can omit `--ref`; updates follow the ref recorded at installation.
+- Pin or roll back with `herdr plugin install avery20024/herdr-async-message-relay --ref v0.6.0`. Normal installs can omit `--ref`; updates follow the ref recorded at installation.
 - Download a platform archive from [Releases](https://github.com/avery20024/herdr-async-message-relay/releases), verify `checksums.txt` and extract it. Keep the included license and third-party notices.
 - For checkout installation, PATH repair, upgrade behavior and checksum boundaries, see [installation details](docs/cli-reference.md#installation-details).
 
@@ -134,7 +134,7 @@ Recipients are matched to `<team-root>/角色/<role>` (the literal directory nam
 - [UI controls, themes, preferences and limitations](docs/ui.md)
 - [CLI operations, inspection, services, configuration, recovery and development](docs/cli-reference.md)
 - [Agent setup and SOP integration](docs/agent-usage.md)
-- [Experimental Claude question guard](docs/claude-question-guard.md) — scoped Hooks; development team-policy change documented separately; not a guarantee against every race
+- [Experimental Claude question guard](docs/claude-question-guard.md) — scoped Hooks and v0.6.0 team-policy migration; not a guarantee against every race
 
 Queue history can contain full messages and sensitive paths. Inspect and redact screenshots or exports before sharing; the local OS account is the trust boundary. See [security and privacy](docs/cli-reference.md#security-and-privacy).
 
