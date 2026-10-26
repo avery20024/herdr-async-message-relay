@@ -37,7 +37,7 @@ hrelay --root "$TEAM" server on
 hrelay --root "$TEAM" ui
 ```
 
-已設定 `DELIVER_ROOT` 的環境可直接執行 `hrelay ui`。UI 對佇列是唯讀的：不會啟動或升級 worker、不發送訊息、不處置 uncertain 批次，也不修改投遞設定。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
+已設定 `DELIVER_ROOT` 的環境可直接執行 `hrelay ui`。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**尚未發布的開發異動：**`Ctrl+P` 可明確儲存團隊共用、預設開啟的 Claude 問答攔截開關；已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。這是 worker 行為設定，不是佇列內容或本機外觀設定，UI 與 worker 均須更新至新實作。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
 
 完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
 

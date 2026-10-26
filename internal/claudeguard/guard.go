@@ -1,4 +1,4 @@
-// Package claudeguard 提供明確啟用的 Claude 問答投遞閘門；不讀寫正式佇列。
+// Package claudeguard 提供團隊共用的 Claude 問答投遞閘門與持續觀測。
 package claudeguard
 
 import (
@@ -22,11 +22,24 @@ const maxRecord = 64 * 1024
 
 type Manager struct{ Dir string }
 type State struct {
-	Session   string          `json:"session_id"`
-	Pane      string          `json:"pane_id"`
-	Phase     string          `json:"phase"`
-	Pending   map[string]bool `json:"pending"`
-	UpdatedAt int64           `json:"updated_at"`
+	Session   string           `json:"session_id"`
+	Pane      string           `json:"pane_id"`
+	Phase     string           `json:"phase"`
+	Pending   map[string]bool  `json:"pending"`
+	UpdatedAt int64            `json:"updated_at"`
+	Started   map[string]int64 `json:"started_at,omitempty"`
+	Recent    []Question       `json:"recent_questions,omitempty"`
+}
+
+// Question 只保存生命週期證據，不含問題或答案本文；未觀測到結束時不填耗時。
+type Question struct {
+	Session    string `json:"session_id"`
+	Pane       string `json:"pane_id"`
+	ToolID     string `json:"tool_use_id"`
+	StartedAt  int64  `json:"started_at"`
+	EndedAt    int64  `json:"ended_at,omitempty"`
+	DurationMS int64  `json:"duration_ms,omitempty"`
+	Outcome    string `json:"outcome"`
 }
 type Policy struct {
 	Version int  `json:"version"`
@@ -110,12 +123,31 @@ func (m Manager) directory(role string) (string, error) {
 
 // 同一角色的同步 hook 與提交持有同一把鎖；等待有界，不使用 shell 背景程序。
 func lock(ctx context.Context, dir string) (func(), error) {
-	f, err := os.OpenFile(filepath.Join(dir, "guard.lock"), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
+	return fileLock(ctx, dir, "guard.lock", false)
+}
+func fileLock(ctx context.Context, dir, name string, shared bool) (func(), error) {
+	f, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
 	if err != nil {
 		return nil, err
 	}
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		_ = f.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("guard lock must be a regular file")
+	}
+	mode := syscall.LOCK_EX
+	if shared {
+		mode = syscall.LOCK_SH
+	}
 	for {
-		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err := ctx.Err(); err != nil {
+			_ = f.Close()
+			return nil, err
+		}
+		err = syscall.Flock(int(f.Fd()), mode|syscall.LOCK_NB)
 		if err == nil {
 			return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
 		}
@@ -132,11 +164,18 @@ func lock(ctx context.Context, dir string) (func(), error) {
 	}
 }
 func readJSON(path string, v any) error {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("guard record must be a regular file")
+	}
 	b, err := io.ReadAll(io.LimitReader(f, maxRecord+1))
 	if err != nil {
 		return err
@@ -144,7 +183,13 @@ func readJSON(path string, v any) error {
 	if len(b) > maxRecord {
 		return errors.New("guard record too large")
 	}
-	return json.Unmarshal(b, v)
+	if err := json.Unmarshal(b, v); err != nil {
+		return err
+	}
+	if s, ok := v.(*State); ok {
+		return s.validate()
+	}
+	return nil
 }
 func writeJSON(dir, name string, v any) error {
 	b, err := json.Marshal(v)
@@ -180,56 +225,37 @@ func writeJSON(dir, name string, v any) error {
 	return d.Sync()
 }
 
-// Configure 只改指定角色政策；重複 enable 不清除任何既有阻擋狀態。
+// Configure 保留舊呼叫介面，但政策已改為團隊共用，不再重設持續觀測狀態。
 func (m Manager) Configure(ctx context.Context, role string, enabled bool) error {
-	dir, err := m.directory(role)
-	if err != nil {
+	if _, err := m.directory(role); err != nil {
 		return err
 	}
-	if err = os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-	release, err := lock(ctx, dir)
-	if err != nil {
-		return err
-	}
-	defer release()
-	if enabled {
-		var previous Policy
-		err := readJSON(filepath.Join(dir, "policy.json"), &previous)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err != nil || !previous.Enabled {
-			// 停用期間可能漏掉問答事件；重新啟用不能沿用舊 ready。
-			if err := writeJSON(dir, "state.json", State{Phase: "unknown", UpdatedAt: time.Now().UnixMilli()}); err != nil {
-				return err
-			}
-		}
-	}
-	return writeJSON(dir, "policy.json", Policy{Version: 1, Enabled: enabled})
+	return m.ConfigureTeam(ctx, enabled)
 }
 func (m Manager) Inspect(ctx context.Context, role string) (Policy, State, error) {
 	dir, err := m.directory(role)
 	if err != nil {
 		return Policy{}, State{}, err
 	}
+	p, err := m.TeamPolicy()
+	if err != nil {
+		return p, State{}, err
+	}
+	if err := checkDir(dir); err != nil {
+		return p, State{}, err
+	}
 	release, err := lock(ctx, dir)
 	if err != nil {
-		return Policy{}, State{}, err
+		return p, State{}, err
 	}
 	defer release()
-	var p Policy
 	var s State
-	if err = readJSON(filepath.Join(dir, "policy.json"), &p); err != nil {
-		return p, s, err
-	}
 	err = readJSON(filepath.Join(dir, "state.json"), &s)
 	return p, s, err
 }
 
 func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
-	if !panePattern.MatchString(pane) || e.Session == "" || len(e.Session) > 256 {
+	if !panePattern.MatchString(pane) || e.Session == "" || len(e.Session) > 256 || len(e.AgentID) > 256 {
 		return errors.New("hook requires valid pane and session")
 	}
 	if e.AgentID != "" && (e.Name == "SessionStart" || e.Name == "SessionEnd") {
@@ -248,10 +274,11 @@ func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
 	if err != nil {
 		return err
 	}
-	// 從未啟用的角色可共用 Hooks；已有目錄卻缺政策不在此放行。
-	if _, err := os.Lstat(dir); errors.Is(err, os.ErrNotExist) {
-		return nil
-	} else if err != nil {
+	// 接線的角色一律記錄，團隊攔截開關不影響事件觀測。
+	if err := prepareDir(m.Dir); err != nil {
+		return err
+	}
+	if err := prepareDir(dir); err != nil {
 		return err
 	}
 	release, err := lock(ctx, dir)
@@ -259,13 +286,6 @@ func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
 		return err
 	}
 	defer release()
-	var p Policy
-	if err = readJSON(filepath.Join(dir, "policy.json"), &p); err != nil {
-		return err
-	}
-	if !p.Enabled {
-		return nil
-	}
 	var s State
 	err = readJSON(filepath.Join(dir, "state.json"), &s)
 	if e.Name == "SessionStart" {
@@ -274,7 +294,10 @@ func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
 			return err
 		}
 		if err != nil || s.Session != e.Session || s.Pane != pane {
-			s = State{Session: e.Session, Pane: pane, Phase: "ready", Pending: map[string]bool{}}
+			for id := range s.Pending {
+				s.finishQuestion(id, "interrupted", false)
+			}
+			s = State{Session: e.Session, Pane: pane, Phase: "ready", Pending: map[string]bool{}, Started: map[string]int64{}, Recent: s.Recent}
 		}
 	} else {
 		if err != nil {
@@ -286,16 +309,25 @@ func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
 		if s.Pending == nil {
 			s.Pending = map[string]bool{}
 		}
+		if s.Started == nil {
+			s.Started = map[string]int64{}
+		}
 		// 子代理的 SessionEnd 不代表座位主會話結束。
 		if e.AgentID != "" && e.Name == "SessionEnd" {
 			return nil
 		}
 		switch e.Name {
 		case "SessionEnd":
+			for id := range s.Pending {
+				s.finishQuestion(id, "interrupted", false)
+			}
 			s.Phase = "ended"
 		case "PreToolUse":
 			if len(s.Pending) >= 100 && !s.Pending[e.ToolID] {
 				return errors.New("too many pending questions")
+			}
+			if !s.Pending[e.ToolID] {
+				s.Started[e.ToolID] = time.Now().UnixMilli()
 			}
 			s.Pending[e.ToolID] = true
 		case "PostToolUse":
@@ -303,39 +335,51 @@ func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
 			if !s.Pending[e.ToolID] {
 				return errors.New("unmatched question completion")
 			}
+			s.finishQuestion(e.ToolID, "completed", true)
 			delete(s.Pending, e.ToolID)
+			delete(s.Started, e.ToolID)
 		case "PostToolUseFailure":
+			// 未配對的失敗代表可能漏掉開始事件；仍須保存 unknown，不沿用 ready。
+			s.finishQuestion(e.ToolID, "failed", true)
 			s.Phase = "unknown"
 		}
 	}
 	s.UpdatedAt = time.Now().UnixMilli()
+	if err := appendEvent(dir, e, pane, s); err != nil {
+		return err
+	}
 	return writeJSON(dir, "state.json", s)
 }
 
 // Acquire 成功時，呼叫方須持鎖直到提交結果已記錄；不是 Claude 原生原子 API。
-// 政策目錄不存在的角色保持原有行為；已有目錄卻缺失／損毀政策或狀態則拒絕放行。
+// 團隊預設攔截；未接線或未初始化的 Claude 不宣稱已受保護且不放行。
 func (m Manager) Acquire(ctx context.Context, role, pane, session string) (func(), bool, error) {
 	dir, err := m.directory(role)
 	if err != nil {
 		return nil, false, err
 	}
-	if _, err = os.Lstat(dir); errors.Is(err, os.ErrNotExist) {
-		return func() {}, false, nil
-	} else if err != nil {
-		return nil, true, err
-	}
-	release, err := lock(ctx, dir)
+	teamRelease, err := m.teamLock(ctx, true)
 	if err != nil {
 		return nil, true, err
 	}
-	var p Policy
-	if err = readJSON(filepath.Join(dir, "policy.json"), &p); err != nil {
-		release()
+	p, err := m.TeamPolicy()
+	if err != nil {
+		teamRelease()
 		return nil, true, err
 	}
 	if !p.Enabled {
-		return release, false, nil
+		return teamRelease, false, nil
 	}
+	if err := checkDir(dir); err != nil {
+		teamRelease()
+		return nil, true, fmt.Errorf("Claude hooks not initialized: %w", err)
+	}
+	roleRelease, err := lock(ctx, dir)
+	if err != nil {
+		teamRelease()
+		return nil, true, err
+	}
+	release := func() { roleRelease(); teamRelease() }
 	var s State
 	if err = readJSON(filepath.Join(dir, "state.json"), &s); err != nil {
 		release()

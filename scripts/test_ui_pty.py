@@ -21,7 +21,30 @@ from urllib.parse import parse_qs, urlsplit
 
 
 class UIHandler(http.server.BaseHTTPRequestHandler):
+    def guard_response(self):
+        body = json.dumps({"project_root": self.server.root,
+                           "policy": {"version": 1, "enabled": self.server.guard_enabled.get(self.server.root, True)},
+                           "observations": [{"role": "gm", "status": "uninitialized", "pending_count": 0}]}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_PUT(self):
+        self.server.guard_requests.append((self.command, self.path))
+        if self.path != "/v1/claude-guard":
+            self.send_error(404)
+            return
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        self.server.guard_enabled[self.server.root] = body["enabled"]
+        self.guard_response()
+
     def do_GET(self):
+        if self.path == "/v1/claude-guard":
+            self.server.guard_requests.append((self.command, self.path))
+            self.guard_response()
+            return
         self.server.requests.append((self.command, self.path))
         body = json.dumps({
             "project_root": self.server.root,
@@ -76,6 +99,8 @@ class UITerminalTests(unittest.TestCase):
         self.server = socketserver.UnixStreamServer(str(path), UIHandler)
         self.server.root = str(self.root)
         self.server.requests = []
+        self.server.guard_requests = []
+        self.server.guard_enabled = {}
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=False)
         self.thread.start()
         self.addCleanup(self.close_server)
@@ -218,7 +243,7 @@ class UITerminalTests(unittest.TestCase):
         self.output.clear()
         os.write(self.fd, b"?")
         # 說明關閉後footer完整重繪；草稿內容仍由下方實際保存值核對。
-        self.wait_for_text(b"Preferences 2/2")
+        self.wait_for_text(b"Preferences 2/3")
         self.assertFalse(self.preferences.exists())
         os.write(self.fd, b"\r")
         self.pump(0.3)
@@ -484,6 +509,29 @@ class UITerminalTests(unittest.TestCase):
         os.write(self.fd, b"\x10\x1b[C\r")  # 損毀時不可覆寫，保留現有theme及draft。
         self.pump(0.3)
         self.assertEqual(self.preferences.read_text(), "invalid preferences")
+        self.finish(b"\x03")
+
+    def test_team_guard_default_toggle_cancel_and_reload(self):
+        self.launch()
+        count = len(self.server.requests)
+        os.write(self.fd, b"\x10")
+        self.wait_for_text(b"On")
+        os.write(self.fd, b"jj\x1b[C")  # 第三欄關閉草稿。
+        self.pump(0.2)
+        os.write(self.fd, b"\x1b")
+        self.pump(0.2)
+        self.assertNotIn(self.server.root, self.server.guard_enabled)
+        self.output.clear()
+        os.write(self.fd, b"\x10")
+        self.wait_for_text(b"On")
+        os.write(self.fd, b"jj\x1b[C\r")
+        self.pump(0.4)
+        self.assertIs(self.server.guard_enabled[self.server.root], False)
+        self.assertEqual(sum(method == "PUT" for method, _ in self.server.guard_requests), 1)
+        self.assertEqual(len(self.server.requests), count, "policy editing must not fetch message history")
+        self.output.clear()
+        os.write(self.fd, b"\x10")
+        self.wait_for_text(b"Off")
         self.finish(b"\x03")
 
     def test_ctrl_c_restores_terminal(self):

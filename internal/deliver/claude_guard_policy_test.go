@@ -6,20 +6,23 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/avery20024/herdr-async-message-relay/internal/claudeguard"
 )
 
 func TestMalformedGuardPolicyKeepsMessagesQueued(t *testing.T) {
-	for _, policy := range []string{"missing", `{}`, `null`, `{"enable":true}`, `{"enabled":true}`, `{"version":1,"enabled":null}`, `{"version":2,"enabled":false}`} {
+	for _, policy := range []string{`{}`, `null`, `{"enable":true}`, `{"enabled":true}`, `{"version":1,"enabled":null}`, `{"version":2,"enabled":false}`} {
 		t.Run(policy, func(t *testing.T) {
 			s, c := fixture(t)
-			dir := filepath.Join(c.StateDir, "claude-guard", "gm")
+			dir := filepath.Join(c.StateDir, "claude-guard")
 			if err := os.MkdirAll(dir, 0700); err != nil {
 				t.Fatal(err)
 			}
-			if policy != "missing" {
-				if err := os.WriteFile(filepath.Join(dir, "policy.json"), []byte(policy), 0600); err != nil {
-					t.Fatal(err)
-				}
+			if err := (claudeguard.Manager{Dir: dir}).Apply(t.Context(), "gm", "wC:p5", claudeguard.Event{Name: "SessionStart", Session: "session-1"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "team-policy.json"), []byte(policy), 0600); err != nil {
+				t.Fatal(err)
 			}
 			a := seat(c, "gm", "idle", "wC:p5", 1)
 			a.Session = AgentSession{Agent: "claude", Kind: "id", Value: "session-1"}
