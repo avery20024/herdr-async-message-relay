@@ -12,6 +12,8 @@ import (
 var shortcutEntries = [][2]string{
 	{"j/k, ↓/↑", "Select next/previous message"},
 	{"u/d", "List half-page up/down"},
+	{"gg", "Jump to first loaded message"},
+	{"G (Shift+g)", "Jump to last loaded message"},
 	{"U/D (Shift+u/d)", "Body page up/down"},
 	{"[ / ]", "Metadata page up/down"},
 	{"Ctrl+F", "Open filters"},

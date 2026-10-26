@@ -327,6 +327,80 @@ class UITerminalTests(unittest.TestCase):
         self.wait_for(b"BODY-FIRST-30")
         self.finish(b"q")
 
+    def test_gg_and_uppercase_g_jump_loaded_endpoints(self):
+        self.server.items = [
+            {"seq": seq, "id": f"jump-{seq}", "sender": "dev", "recipient": "gm",
+             "state": "queued", "created_at": 1792771200000,
+             "body": f"JUMP-BODY-{seq}"}
+            for seq in (3, 2, 1)
+        ]
+        self.launch(needle=b"JUMP-BODY-3")
+        count = len(self.server.requests)
+        self.output.clear()
+        os.write(self.fd, b"G")
+        self.pump(0.2)
+        # 強制完整重畫，避免 renderer 省略計數及訊息的共同前綴。
+        self.output.clear()
+        fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 181, 0, 0))
+        os.kill(self.child, signal.SIGWINCH)
+        self.wait_for_text(b"3/3")
+        self.output.clear()
+        os.write(self.fd, b"g")
+        self.pump(0.2)
+        self.assertNotIn(b"1/3", self.output, "single g must not jump")
+        os.write(self.fd, b"g")
+        self.pump(0.2)
+        self.output.clear()
+        fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 180, 0, 0))
+        os.kill(self.child, signal.SIGWINCH)
+        self.wait_for_text(b"1/3")
+        self.assertEqual(len(self.server.requests), count, "endpoint keys must not fetch")
+        self.finish(b"q")
+
+    def test_mouse_wheel_routes_by_screen_coordinates(self):
+        self.server.items = [
+            {"seq": seq, "id": f"wheel-{seq}", "sender": "dev", "recipient": "gm",
+             "state": "queued", "created_at": 1792771200000,
+             "body": f"WHEEL-FIRST-{seq}\nSECOND-LINE-{seq}\n" + "\n".join(f"ROW-{n}" for n in range(60)),
+             "idempotency_key": "long-key-" * 150}
+            for seq in (2, 1)
+        ]
+        self.launch(needle=b"WHEEL-FIRST-2")
+        self.wait_for(b"\x1b[?1006h")
+        count = len(self.server.requests)
+        columns = 180
+
+        def redraw_after(event):
+            nonlocal columns
+            os.write(self.fd, event)
+            self.pump(0.15)
+            self.output.clear()
+            columns = 181 if columns == 180 else 180
+            fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, columns, 0, 0))
+            os.kill(self.child, signal.SIGWINCH)
+            self.pump(0.25)
+
+        # SGR 滑鼠座標為一起算；下區從第16行開始，中央分隔約在第73欄。
+        redraw_after(b"\x1b[<65;120;18M")
+        self.wait_for_text(b"Message body")
+        self.wait_for_text(b"line 2/62")
+        self.wait_for_text("Details · line 1/".encode())
+        self.assertIn(b"SECOND-LINE-2", self.output)
+        redraw_after(b"\x1b[<65;10;18M")
+        self.wait_for_text(b"Details")
+        self.wait_for_text(b"line 2/")
+        self.wait_for_text("Message body · line 2/62".encode())
+        self.assertIn(b"SECOND-LINE-2", self.output)
+        self.assertEqual(len(self.server.requests), count)
+        redraw_after(b"\x1b[<65;10;4M")
+        self.wait_for_text(b"2/2")
+        self.wait_for_text("Message body · line 1/62".encode())
+        self.wait_for_text("Details · line 1/".encode())
+        self.assertEqual(len(self.server.requests), count)
+        self.finish(b"q")
+        self.assertIn(b"\x1b[?1006l", self.output)
+        self.assertIn(b"\x1b[?1002l", self.output)
+
     def test_brackets_scroll_metadata_to_last_line(self):
         self.server.items = [{
             "seq": 1, "id": "msg-meta", "sender": "dev", "recipient": "gm",
@@ -338,7 +412,7 @@ class UITerminalTests(unittest.TestCase):
         count = len(self.server.requests)
         self.output.clear()
         os.write(self.fd, b"]")
-        self.wait_for(b"META-12")
+        self.wait_for(b"META-04")  # 左下資料頁高11行；前7行是欄位與證據首行。
         self.output.clear()
         os.write(self.fd, b"]" * 6)
         # 與其他行不共用META-前綴，避免終端差分重繪省略相同字元。

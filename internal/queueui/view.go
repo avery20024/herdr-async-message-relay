@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 	"github.com/avery20024/herdr-async-message-relay/internal/sqlc"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -76,9 +77,10 @@ var labels = map[string]string{
 	"Local preferences saved; team save pending.":               "本機偏好已儲存；團隊設定儲存中。",
 	"Loading": "載入中", "Unavailable": "無法使用", "On": "開", "Off": "關", "Reload required": "須重載",
 	"Preferences storage unavailable.": "偏好設定儲存位置無法使用。", "Unable to load preferences.": "無法載入偏好設定。", "Unable to save preferences.": "無法儲存偏好設定。", "Preferences reloaded.": "已重載偏好設定。", "Preferences saved.": "已儲存偏好設定。",
-	"↑↓ field ←→ value Enter save Esc cancel ^R reload":                                                             "↑↓選項 ←→設定 Enter儲存 Esc取消 ^R重載",
-	"j/k select u/d list U/D body [] data r refresh P clear filters ^F filters ^P prefs ^R config ^W auto q ? help": "j/k選列 u/d半頁 U/D本文 []資料 r刷新 P 清除篩選 ^F篩選 ^P設定 ^R重載 ^W自動 q離開 ?說明",
-	"j/k u/d U/D [] r P clear filters ^F filter ^P prefs ^R reload ^W auto q ? help":                                "j/k u/d U/D [] r P 清除篩選 ^F篩選 ^P設定 ^R重載 ^W自動 q ?說明",
+	"↑↓ field ←→ value Enter save Esc cancel ^R reload":                                                                       "↑↓選項 ←→設定 Enter儲存 Esc取消 ^R重載",
+	"j/k select u/d list gg/G ends U/D body [] data r refresh P clear filters ^F filters ^P prefs ^R config ^W auto q ? help": "j/k選列 u/d半頁 gg/G首尾 U/D本文 []資料 r刷新 P 清除篩選 ^F篩選 ^P設定 ^R重載 ^W自動 q離開 ?說明",
+	"j/k u/d gg/G U/D [] r P clear filters ^F filter ^P prefs ^R reload ^W auto q ? help":                                     "j/k u/d gg/G U/D [] r P 清除篩選 ^F篩選 ^P設定 ^R重載 ^W自動 q ?說明",
+	"Jump to first loaded message": "跳至已載入的第一筆訊息", "Jump to last loaded message": "跳至已載入的最後一筆訊息",
 	"Keyboard shortcuts": "快捷鍵說明", "Quit UI": "離開UI", "ESC close": "ESC 退出", "Navigation": "訊息導覽", "Main screen": "主畫面", "Filter dialog": "篩選視窗", "Preferences dialog": "偏好設定視窗", "Global": "全域", "Help screen": "說明畫面",
 	"Select next/previous message": "選取下一／上一則訊息", "List half-page up/down": "訊息列表上／下半頁", "Body page up/down": "訊息本文上／下一頁", "Metadata page up/down": "訊息資料上／下一頁",
 	"Open filters": "開啟篩選", "Clear applied filters": "清除已套用篩選", "Open Preferences": "開啟偏好設定", "Refresh messages only": "只刷新訊息", "Toggle one-second auto refresh": "開關每秒自動刷新", "Quit from main screen only": "僅在主畫面離開UI",
@@ -112,33 +114,61 @@ func (m *Model) detailLines() []string {
 	}
 	return strings.Split(ansi.Hardwrap(clean(m.rows[m.selected].Body), m.detailWidth(), true), "\n")
 }
-func (m *Model) metadataLines() []string {
+
+// 左下固定保留兩行說明；即使最小尺寸也至少留下可捲動的一行資料。
+func (m *Model) metadataPageHeight() int { return max(1, m.detailPageHeight()-2) }
+func (m *Model) metadataNotes() []string {
+	return []string{m.text("Submission is not a read receipt."), m.text("Control sequences are hidden; stored body is unchanged.")}
+}
+func (m *Model) metadataLines() []string { return m.metadataContent(false) }
+func (m *Model) metadataContent(styled bool) []string {
 	if len(m.rows) == 0 {
 		return []string{m.text("No messages.")}
 	}
 	row := m.rows[m.selected]
-	label := m.metadataLabel
-	text := label("Sender") + ": " + row.Sender + " → " + label("Recipient") + ": " + row.Recipient + "\n" + label("State") + ": " + row.State + "\n" + label("Stored") + ": " + stamp(row.CreatedAt, true) + "\n" + label("Delivery time") + ": " + stamp(delivered(row), true)
+	// 先淨化各欄位再加可信樣式，避免外來 ANSI 控制碼影響終端。
+	field := func(key, value string) string {
+		value = clean(value)
+		if styled {
+			value = m.styles.accent.Render(value)
+		}
+		separator := ": "
+		if m.language == i18n.TraditionalChinese {
+			separator = "："
+		}
+		return m.metadataLabel(key) + separator + value
+	}
+	text := field("Sender", row.Sender) + "\n" + field("Recipient", row.Recipient) + "\n" + field("State", row.State) + "\n" + field("Stored", stamp(row.CreatedAt, true)) + "\n" + field("Delivery time", stamp(delivered(row), true))
 	if delivered(row) > 0 {
 		text += "\n" + m.text("Automatic submission record")
 	}
 	if row.BatchID.Valid {
-		text += "\n" + label("Batch") + ": " + row.BatchID.String + " (" + row.BatchState.String + ")"
+		text += "\n" + field("Batch", row.BatchID.String+" ("+row.BatchState.String+")")
 	}
 	if row.BatchState.String == "resolved_submitted" && row.BatchUpdatedAt.Valid {
-		text += "\n" + m.text("Manual confirmation record (not original delivery time)") + ": " + stamp(row.BatchUpdatedAt.Int64, true)
+		text += "\n" + field("Manual confirmation record (not original delivery time)", stamp(row.BatchUpdatedAt.Int64, true))
 	} else if delivered(row) == 0 {
 		text += "\n" + m.text("No reliable delivery time")
 	}
 	if row.BatchDetail.Valid && row.BatchDetail.String != "" {
-		text += "\n" + label("Batch evidence") + ": " + row.BatchDetail.String
+		text += "\n" + field("Batch evidence", row.BatchDetail.String)
 	}
-	text += "\n" + label("ID") + ": " + row.ID + "\n" + label("Sequence") + ": " + fmt.Sprint(row.Seq) + "\n" + label("Idempotency key") + ": " + row.IdempotencyKey
+	text += "\n" + field("ID", row.ID) + "\n" + field("Sequence", fmt.Sprint(row.Seq)) + "\n" + field("Idempotency key", row.IdempotencyKey)
 	if row.BatchUpdatedAt.Valid {
-		text += "\n" + label("Batch updated") + ": " + stamp(row.BatchUpdatedAt.Int64, true)
+		text += "\n" + field("Batch updated", stamp(row.BatchUpdatedAt.Int64, true))
 	}
-	text += "\n" + label("Root") + ": " + m.root + "\n" + m.text("Submission is not a read receipt.") + "\n" + m.text("Control sequences are hidden; stored body is unchanged.")
-	return strings.Split(ansi.Wrap(clean(text), m.metadataWidth(), " /"), "\n")
+	text += "\n" + field("Root", m.root)
+	wrapped := ansi.Hardwrap(text, m.metadataWidth(), true)
+	if !styled {
+		return strings.Split(wrapped, "\n")
+	}
+	// 每行獨立保存並關閉樣式，避免 viewport 截斷或從中間捲入時遺失 reset。
+	lines := uv.NewStyledString(wrapped).Lines(ansi.GraphemeWidth)
+	result := make([]string, len(lines))
+	for i, line := range lines {
+		result[i] = line.Render()
+	}
+	return result
 }
 func (m *Model) clampLayout() {
 	m.clampHelp()
@@ -152,7 +182,7 @@ func (m *Model) clampLayout() {
 	}
 	m.top = max(0, min(m.top, max(0, len(m.rows)-visible)))
 	m.detailOffset = max(0, min(m.detailOffset, max(0, len(m.detailLines())-m.detailPageHeight())))
-	m.metadataOffset = max(0, min(m.metadataOffset, max(0, len(m.metadataLines())-m.detailPageHeight())))
+	m.metadataOffset = max(0, min(m.metadataOffset, max(0, len(m.metadataLines())-m.metadataPageHeight())))
 }
 func (m *Model) tableLines() []string {
 	if m.mobile() {
@@ -218,13 +248,16 @@ func (m *Model) View() tea.View {
 		return v
 	}
 	content := m.tableLines()
-	detail, metadata := m.detailLines(), m.metadataLines()
+	detail, metadata := m.detailLines(), m.metadataContent(true)
 	dh, dw, mw := m.detailPageHeight(), m.detailWidth(), m.metadataWidth()
 	metadataTitle, bodyTitle := m.lowerTitles(len(metadata), len(detail))
 	content = append(content, m.styles.heading.Render(cell(metadataTitle, mw))+m.styles.border.Render("┬")+m.styles.heading.Render(cell(bodyTitle, dw)))
-	leftViewport := textViewport(metadata, mw, dh, m.metadataOffset)
+	leftViewport := textViewport(metadata, mw, m.metadataPageHeight(), m.metadataOffset)
 	rightViewport := textViewport(detail, dw, dh, m.detailOffset)
 	leftLines := strings.Split(leftViewport.View(), "\n")
+	for _, note := range m.metadataNotes() {
+		leftLines = append(leftLines, m.styles.muted.Render(cell(note, mw)))
+	}
 	rightLines := strings.Split(rightViewport.View(), "\n")
 	for i := 0; i < dh; i++ {
 		left, right := "", ""
@@ -302,6 +335,7 @@ func (m *Model) View() tea.View {
 	output += m.footerLine()
 	v := tea.NewView(m.paintCanvas(output))
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 func (m *Model) choice(value string) string {

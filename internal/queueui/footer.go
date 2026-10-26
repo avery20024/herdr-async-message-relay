@@ -22,8 +22,8 @@ func (m *Model) helpChoices() []string {
 		return []string{m.text("↑↓ field ←→ value d clear P clear-all Enter apply Esc cancel") + " ?", "↑↓ ←→ d P Enter Esc ?", "↑↓←→dPEnter Esc?"}
 	}
 	return []string{
-		m.text("j/k select u/d list U/D body [] data r refresh P clear filters ^F filters ^P prefs ^R config ^W auto q ? help"),
-		m.text("j/k u/d U/D [] r P clear filters ^F filter ^P prefs ^R reload ^W auto q ? help"),
+		m.text("j/k select u/d list gg/G ends U/D body [] data r refresh P clear filters ^F filters ^P prefs ^R config ^W auto q ? help"),
+		m.text("j/k u/d gg/G U/D [] r P clear filters ^F filter ^P prefs ^R reload ^W auto q ? help"),
 		"j/k u/d U/D [] r P ^FPRW q ?",
 		"jk ud UD [] r P ^FPRWq?",
 		"jkudUD[]rP^FPRWq?",
