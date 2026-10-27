@@ -11,6 +11,7 @@ import (
 
 func TestFooterClearFilterHelpIsExplicit(t *testing.T) {
 	m, _ := ready(t)
+	m.auto = false // 此案例鎖定手動模式原有的完整說明寬度；全模式另有覆蓋。
 	for _, tc := range []struct {
 		language i18n.Language
 		want     string

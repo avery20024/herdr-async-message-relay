@@ -37,7 +37,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 				{"team", "", "team-wide interception policy"},
 				{"role", "ROLE", "explicit recipient role"},
 			},
-			notes:    []string{"Team interception defaults on; Hooks record even when interception is off.", "Switching policy preserves observations; missing SessionStart is not ready.", "status reads policy and state; malformed policies fail closed. No service is started."},
+			notes:    []string{"Interception defaults off; Hooks record even when interception is off.", "Switching policy preserves observations; missing SessionStart is not ready.", "status reads policy and state; malformed policies fail closed. No service is started."},
 			examples: []string{"hrelay --root /absolute/team claude-guard --role gm status", "hrelay --root /absolute/team claude-guard --team disable"},
 		},
 		"claude-hook": {
@@ -46,7 +46,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 				{"role", "ROLE", "explicit recipient role"},
 				{"pane", "ID", "Claude pane ID; defaults to HERDR_PANE_ID"},
 			},
-			notes:    []string{"Experimental synchronous hook; reads one Claude event from stdin, never an answer.", "--role is required; --pane defaults to HERDR_PANE_ID. Recording failures warn only when interception is explicitly off; otherwise exit 2.", "Do not install these hooks in global Claude settings; missing context can block unrelated questions.", "Use only with a verified role/session binding; never synthesize ready events for production panes."},
+			notes:    []string{"Experimental synchronous hook; reads one Claude event from stdin, never an answer.", "--role is required; --pane defaults to HERDR_PANE_ID. Recording failures warn when interception is off; otherwise exit 2.", "Do not install these hooks in global Claude settings; missing context can block unrelated questions.", "Use only with a verified role/session binding; never synthesize ready events for production panes."},
 			examples: []string{"hrelay --root /absolute/test-team claude-hook --role gm --pane REAL_TEST_PANE < event.json"},
 		},
 		"version": {
@@ -65,7 +65,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 			},
 			notes: []string{
 				"Flags must precede ROLE MESSAGE; do not mix positional arguments with --to/--body.",
-				"--from defaults to HERDR_RELAY_FROM; sender and recipient must name existing role directories.",
+				"--from defaults to HERDR_RELAY_FROM; valid role names can be queued while seats are offline.",
 				"--key defaults to a generated key. On an ambiguous result, reuse the reported key and identical content.",
 				"--ensure defaults to true for ROLE MESSAGE, false for --to/--body. Use --ensure=false to avoid service startup.",
 				"--to and --body have no defaults; provide both in the flag-only form.",
@@ -77,7 +77,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 			syntax: "ui",
 			notes: []string{
 				"Read-only history over the existing relay socket; never starts a service or writes to the queue.",
-				"Manual refresh by default: r refreshes; Ctrl+W toggles one-second auto refresh.",
+				"One-second auto refresh by default: r refreshes; Ctrl+W toggles auto refresh.",
 				"j/k or arrows select; u/d move the list by half a page; U/D page the message body.",
 				"[ and ] page metadata up/down; list, body and metadata keys never switch focus.",
 				"Layout: list above; metadata bottom-left and message body bottom-right; no focus switching.",
@@ -115,7 +115,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 				"DELIVER_STATE_DIR overrides the state directory; otherwise use XDG_STATE_HOME or ~/.local/state plus the project hash.",
 				"DELIVER_BATCH_SIZE defaults to 3 (1..100); DELIVER_BATCH_BYTES to 12000 (2048..64000); DELIVER_POLL_MS to 500 (50..60000).",
 				"DELIVER_RETRY_BACKOFF_MS defaults to 30000 (0..600000); DELIVER_MAX_ATTEMPTS to 3 (1..10); delivery is at least once.",
-				"Seats resolve through herdr agent list: exact role directory, then a path inside it, then an exact foreground_cwd; the match must be unique or nothing is sent.",
+				"Seats come from herdr agent list: a unique foreground_cwd basename strictly inside this root; no fixed directory layout or cwd fallback.",
 				"HERDR_BIN_PATH defaults to herdr; delivery requires the correct inherited Herdr socket context.",
 			},
 			examples: []string{"hrelay --root /absolute/team serve"},
@@ -268,7 +268,7 @@ func printCommandHelp(w io.Writer, language i18n.Language, topic string) error {
 	}
 	b.WriteByte('\n')
 	line("Global options (before the command):")
-	fmt.Fprintf(&b, "  --root PATH                 %s\n  --lang auto|en|zh-TW         %s\n", language.Text("team root containing 角色"), language.Text("display language: auto, en or zh-TW"))
+	fmt.Fprintf(&b, "  --root PATH                 %s\n  --lang auto|en|zh-TW         %s\n", language.Text("relay root containing agent foreground directories"), language.Text("display language: auto, en or zh-TW"))
 	b.WriteByte('\n')
 	line("Context and safety:")
 	for _, note := range append([]string{

@@ -8,28 +8,36 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// 依相近使用時機排列，合併重複鍵；選單操作不在此重複展開。
-var shortcutEntries = [][2]string{
-	{"j/k, ↓/↑", "Select next/previous message"},
-	{"u/d", "List half-page up/down"},
-	{"gg", "Jump to first loaded message"},
-	{"G (Shift+g)", "Jump to last loaded message"},
-	{"U/D (Shift+u/d)", "Body page up/down"},
-	{"[ / ]", "Metadata page up/down"},
-	{"Ctrl+F", "Open filters"},
-	{"P (Shift+p)", "Clear applied filters"},
-	{"Ctrl+P", "Open Preferences"},
-	{"Ctrl+R", "Reload settings, not messages"},
-	{"r", "Refresh messages only"},
-	{"Ctrl+W", "Toggle one-second auto refresh"},
-	{"?", "Open/close this help"},
-	{"q / Ctrl+C", "Quit UI"},
+// 按瀏覽、篩選、設置、其他分組；每個快捷鍵只列一次。
+var shortcutEntries = [][3]string{
+	{"j/k, ↓/↑", "Select next/previous message", "Browsing"},
+	{"u/d", "List half-page up/down", "Browsing"},
+	{"gg", "Jump to first loaded message", "Browsing"},
+	{"G (Shift+g)", "Jump to last loaded message", "Browsing"},
+	{"U/D (Shift+u/d)", "Body page up/down", "Browsing"},
+	{"[ / ]", "Metadata page up/down", "Browsing"},
+	{"r", "Refresh messages only", "Browsing"},
+	{"Ctrl+F", "Open filters", "Filters"},
+	{"P (Shift+p)", "Clear applied filters", "Filters"},
+	{"Ctrl+P", "Open Preferences", "Settings"},
+	{"Ctrl+R", "Reload settings, not messages", "Settings"},
+	{"Ctrl+W", "Toggle one-second auto refresh", "Settings"},
+	{"?", "Open/close this help", "Other"},
+	{"q / Ctrl+C", "Quit UI", "Other"},
 }
 
 func (m *Model) helpDocument() []string {
 	width := m.helpInnerWidth()
 	var lines []string
+	group := ""
 	for _, entry := range shortcutEntries {
+		if group != entry[2] {
+			if group != "" {
+				lines = append(lines, strings.Repeat(" ", width))
+			}
+			group = entry[2]
+			lines = append(lines, m.styles.heading.Bold(true).Render(cell(m.text(group), width)))
+		}
 		description := m.text(entry[1])
 		keyWidth := 16
 		descWidth := width - keyWidth - 2

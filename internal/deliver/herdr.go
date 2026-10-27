@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"time"
 
 	"strings"
+
+	"github.com/avery20024/herdr-async-message-relay/internal/roles"
 )
 
 type AgentSession struct {
@@ -113,107 +116,54 @@ func (h CLIHerdr) Prompt(ctx context.Context, pane, body string) error {
 
 var panePattern = regexp.MustCompile(`^w[0-9A-Za-z]+:p[0-9A-Za-z]+$`)
 
-// canonicalPath 解析符號連結；路徑不存在時退回清理後的字串，避免比較時混用邏輯與實體路徑。
-func canonicalPath(p string) string {
-	if p == "" {
-		return ""
+// RoleFromDirectory 僅依既存前景目錄的實體路徑與 root 邊界判斷，不退回 shell cwd。
+func RoleFromDirectory(root, foreground string) (string, error) {
+	if !filepath.IsAbs(root) || !filepath.IsAbs(foreground) {
+		return "", errors.New("root and foreground_cwd must be absolute paths")
 	}
-	if resolved, err := filepath.EvalSymlinks(p); err == nil {
-		return resolved
+	base, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
 	}
-	// 末端可能還不存在（例如剛建立的子目錄）；解析最近的既有祖先後再接回剩餘片段。
-	parts := []string{}
-	for dir := filepath.Clean(p); ; {
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return filepath.Clean(p)
-		}
-		parts = append([]string{filepath.Base(dir)}, parts...)
-		dir = parent
-		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-			return filepath.Join(append([]string{resolved}, parts...)...)
-		}
+	path, err := filepath.EvalSymlinks(foreground)
+	if err != nil {
+		return "", err
 	}
+	rel, err := filepath.Rel(base, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", errors.New("foreground_cwd must be strictly inside the relay root")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	name := filepath.Base(path)
+	if !info.IsDir() || !roles.ValidName(name) {
+		return "", errors.New("foreground_cwd must name a valid role directory")
+	}
+	return name, nil
 }
 
-func uniquePaths(paths ...string) []string {
-	seen := map[string]bool{}
-	out := []string{}
-	for _, p := range paths {
-		if p != "" && !seen[p] {
-			seen[p] = true
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// cwdBelongsToRole 判斷 cwd 是否落在角色容器底下的本角色；容器本身或其他角色都不算。
-func cwdBelongsToRole(cwd string, rolesDirs []string, role string) bool {
-	for _, rolesDir := range rolesDirs {
-		rel, err := filepath.Rel(rolesDir, cwd)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue
-		}
-		if rel == "." {
-			return false
-		}
-		return strings.SplitN(rel, string(filepath.Separator), 2)[0] == role
-	}
-	return true
-}
-
-// seatRank 由 herdr agent list 的 cwd／foreground_cwd 判斷座位歸屬：
-// cwd 完全相符（3）> cwd 在角色目錄下（2）> foreground_cwd 完全相符（1）。
-// cwd 已落在其他角色目錄時一律排除，避免以前景程序認領別人的訊息。
-func seatRank(a Agent, role string, rolesDirs, bases []string) int {
-	cwd := canonicalPath(a.CWD)
-	foreground := canonicalPath(a.ForegroundCWD)
-	if !cwdBelongsToRole(cwd, rolesDirs, role) {
-		return 0
-	}
-	rank := 0
-	for _, base := range bases {
-		switch {
-		case cwd == base:
-			rank = max(rank, 3)
-		case strings.HasPrefix(cwd, base+string(filepath.Separator)):
-			rank = max(rank, 2)
-		}
-	}
-	for _, base := range bases {
-		if foreground == base {
-			rank = max(rank, 1)
-		}
-	}
-	return rank
-}
-
-// ResolveAgent 以 herdr agent list 解析角色座位；較精確的比對優先，仍要求唯一。
-func ResolveAgent(root, role string, agents []Agent) (Agent, error) {
-	roleDir := filepath.Join(canonicalPath(root), "角色", role)
-	bases := uniquePaths(roleDir, canonicalPath(roleDir))
-	rolesDir := filepath.Dir(roleDir)
-	rolesDirs := uniquePaths(rolesDir, canonicalPath(rolesDir))
-	best := 0
-	matches := []Agent{}
+// DiscoverRoles 保留同名座位，讓後續解析明確拒絕衝突，不按 cwd 或狀態任選一席。
+func DiscoverRoles(root string, agents []Agent) map[string][]Agent {
+	found := map[string][]Agent{}
 	for _, a := range agents {
-		rank := seatRank(a, role, rolesDirs, bases)
-		if rank == 0 {
-			continue
-		}
-		if rank > best {
-			best = rank
-			matches = matches[:0]
-		}
-		if rank == best {
-			matches = append(matches, a)
+		if name, err := RoleFromDirectory(root, a.ForegroundCWD); err == nil {
+			found[name] = append(found[name], a)
 		}
 	}
+	return found
+}
+
+func ResolveAgent(root, role string, agents []Agent) (Agent, error) {
+	if !roles.ValidName(role) {
+		return Agent{}, fmt.Errorf("invalid role: %q", role)
+	}
+	matches := DiscoverRoles(root, agents)[role]
 	if len(matches) == 0 {
 		return Agent{}, fmt.Errorf("role %s has no seat in herdr agent list", role)
 	}
-	if len(matches) > 1 {
+	if len(matches) != 1 {
 		return Agent{}, fmt.Errorf("role %s matched %d seats", role, len(matches))
 	}
 	a := matches[0]

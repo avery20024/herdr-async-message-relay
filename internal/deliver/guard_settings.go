@@ -2,18 +2,22 @@ package deliver
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/avery20024/herdr-async-message-relay/internal/claudeguard"
+	"github.com/avery20024/herdr-async-message-relay/internal/roles"
 )
 
 type GuardSettings struct {
-	ProjectRoot  string                    `json:"project_root"`
-	Policy       claudeguard.Policy        `json:"policy"`
-	Observations []claudeguard.Observation `json:"observations"`
+	ProjectRoot    string                    `json:"project_root"`
+	Policy         claudeguard.Policy        `json:"policy"`
+	Observations   []claudeguard.Observation `json:"observations"`
+	DiscoveryError string                    `json:"discovery_error,omitempty"`
 }
 
 func (a API) guardSettings(w http.ResponseWriter, r *http.Request) {
@@ -36,16 +40,36 @@ func (a API) guardSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := GuardSettings{ProjectRoot: a.Config.Root, Policy: p, Observations: []claudeguard.Observation{}}
-	roles, err := os.ReadDir(filepath.Join(a.Config.Root, "角色"))
-	if err != nil {
-		apiError(w, 500, "unable to read team roles")
-		return
+	// 即時座位為主，保留離線角色的既有觀測；查詢失敗不得阻止緊急關閉政策。
+	names := map[string]bool{}
+	herdr := a.Herdr
+	if herdr == nil {
+		herdr = CLIHerdr{Binary: a.Config.Herdr, Timeout: a.Config.CommandTimeout}
 	}
-	for _, role := range roles {
-		if !role.IsDir() {
-			continue
+	agents, listErr := herdr.List(ctx)
+	if listErr != nil {
+		result.DiscoveryError = "seat discovery unavailable; recorded roles only"
+	} else {
+		for name := range DiscoverRoles(a.Config.Root, agents) {
+			names[name] = true
 		}
-		result.Observations = append(result.Observations, m.Observation(ctx, role.Name()))
+	}
+	entries, readErr := os.ReadDir(m.Dir)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		result.DiscoveryError = "unable to enumerate recorded guard roles"
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && roles.ValidName(entry.Name()) {
+			names[entry.Name()] = true
+		}
+	}
+	ordered := make([]string, 0, len(names))
+	for name := range names {
+		ordered = append(ordered, name)
+	}
+	sort.Strings(ordered)
+	for _, name := range ordered {
+		result.Observations = append(result.Observations, m.Observation(ctx, name))
 	}
 	respond(w, 200, result)
 }

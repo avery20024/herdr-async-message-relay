@@ -21,6 +21,7 @@ import (
 type API struct {
 	Store  *Store
 	Config Config
+	Herdr  Herdr
 }
 
 func respond(w http.ResponseWriter, status int, value any) {

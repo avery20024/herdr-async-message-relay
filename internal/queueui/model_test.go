@@ -97,12 +97,13 @@ func ready(t *testing.T) (*Model, *fakeLoader) {
 	f := &fakeLoader{}
 	m := NewModel(t.Context(), f, "/team", i18n.English)
 	m.Update(tea.WindowSizeMsg{Width: 180, Height: 30})
-	apply(m, m.Init())
+	// 專項測試驗證 Init 的預設 timer；其餘案例只執行初次查詢，避免每例等一秒。
+	apply(m, m.fetch(false))
 	return m, f
 }
 func TestSelectionPagingRefreshAndErrors(t *testing.T) {
 	m, f := ready(t)
-	if m.auto || m.selected != 0 || len(m.rows) != 50 {
+	if !m.auto || m.selected != 0 || len(m.rows) != 50 {
 		t.Fatal("bad defaults")
 	}
 	for i := 0; i < 49; i++ {
@@ -175,15 +176,20 @@ func TestAutoTimerAndQuit(t *testing.T) {
 	if _, cmd := m.Update(key("esc")); cmd != nil {
 		t.Fatal("Esc quit main screen")
 	}
-	_, cmd := m.Update(key("ctrl+w"))
-	if !m.auto || cmd == nil {
-		t.Fatal("auto toggle missing timer")
-	}
 	old := m.timer
 	m.Update(key("ctrl+w"))
 	if m.auto {
 		t.Fatal("auto did not stop")
 	}
+	if _, cmd := m.Update(tickMsg(old)); cmd != nil {
+		t.Fatal("initial tick kept refreshing after stop")
+	}
+	_, cmd := m.Update(key("ctrl+w"))
+	if !m.auto || cmd == nil {
+		t.Fatal("auto toggle missing timer")
+	}
+	old = m.timer
+	m.Update(key("ctrl+w"))
 	if _, cmd := m.Update(tickMsg(old)); cmd != nil {
 		t.Fatal("old tick kept refreshing")
 	}

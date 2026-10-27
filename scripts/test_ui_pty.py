@@ -124,7 +124,7 @@ class UITerminalTests(unittest.TestCase):
         self.thread.join(timeout=5)
         self.assertFalse(self.thread.is_alive())
 
-    def launch(self, rows=30, columns=180, needle=b"PTY original body"):
+    def launch(self, rows=30, columns=180, needle=b"PTY original body", auto=False):
         fd, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
         self.original = termios.tcgetattr(slave)
@@ -158,6 +158,10 @@ class UITerminalTests(unittest.TestCase):
         self.child, self.fd, self.slave = pid, fd, slave
         self.addCleanup(os.close, slave)
         self.wait_for(needle)
+        if not auto:
+            # 非自動刷新專項案例明確切回手動，避免背景查詢干擾請求計數。
+            os.write(self.fd, b"\x17")
+            self.pump(0.1)
 
     def pump(self, duration):
         until = time.monotonic() + duration
@@ -275,10 +279,14 @@ class UITerminalTests(unittest.TestCase):
         self.finish(b"q")
 
     def test_keyboard_filter_refresh_resize_and_quit(self):
-        self.launch()
+        self.launch(auto=True)
         count = len(self.server.requests)
         self.pump(1.2)
-        self.assertEqual(len(self.server.requests), count, "default mode must be manual")
+        self.assertGreater(len(self.server.requests), count, "default mode must refresh automatically")
+        self.wait_for(b"Auto (1s)")
+        os.write(self.fd, b"\x17")  # 明確停用預設自動刷新後驗證手動操作。
+        self.pump(0.2)
+        count = len(self.server.requests)
         os.write(self.fd, b"r")
         self.pump(0.3)
         self.assertGreater(len(self.server.requests), count)

@@ -83,7 +83,7 @@ func flagsResult(ctx context.Context, f *flag.FlagSet, err error) error {
 
 func run(ctx context.Context, args []string) (err error) {
 	global := newFlags("hrelay")
-	root := global.String("root", os.Getenv("DELIVER_ROOT"), "team root containing 角色")
+	root := global.String("root", os.Getenv("DELIVER_ROOT"), "relay root containing agent foreground directories")
 	choice := global.String("lang", "", "display language: auto, en or zh-TW")
 	parseErr := global.Parse(args)
 	language, err := i18n.Resolve(*choice, os.Getenv)

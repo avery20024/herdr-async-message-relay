@@ -8,7 +8,9 @@ Use [the UI](ui.md) for everyday history, filters and UI preferences. This refer
 
 This is an early release for macOS and Linux, arm64 and amd64. The Herdr compatibility baseline is **0.9.3**. Windows is not supported.
 
-Role discovery follows `<team-root>/角色/<role>` (`角色` means “roles”) and always reads `pane_id` from `herdr agent list`. Matching prefers, in order: the agent's `cwd` equal to the role root (or its resolved physical path); a `cwd` inside that role directory; then a `foreground_cwd` exactly equal to the role root. An agent whose `cwd` already belongs to another role directory is never used for this role, and a match must be unique — zero or multiple candidates means nothing is delivered and a warning is logged. Role names are lowercase letters, digits, and hyphens, starting with a letter. A configurable routing registry is not implemented yet.
+**Unreleased role discovery (not in published v0.6.0):** start with actual agents from `herdr agent list`; resolve each absolute `foreground_cwd` and the relay root through symlinks, require an existing directory strictly inside the root, and use its physical basename as the role. No fixed directory names, `cwd` fallback, or exact/subdirectory ranking remain. Root itself, missing/relative paths and symlink escapes are excluded. Duplicate role names remain ambiguous even when one seat is idle; invalid pane/sequence metadata is not delivered. Names start with a Unicode letter and continue with letters, marks, digits, `_` or `-`, up to 64 UTF-8 bytes; separators, whitespace and control characters are rejected. Keep the foreground directory stable: entering a child directory changes the role name. Senders are still explicitly declared, not authenticated; valid offline roles can be queued without pre-creating directories. Discovery does not synthesize Claude SessionStart/ready state.
+
+The guard settings API lists discovered live roles plus persisted observation roles, not a hard-coded filesystem container. Discovery failures are exposed as `discovery_error`; the UI warns that observations may be incomplete, but an emergency policy disable remains available.
 
 Starting with v0.2.0, `service start` / `send --ensure` can register and start a **launchd user agent on macOS** or a **systemd user service on Linux**. The Herdr startup hook restores registered, unpaused projects. Installation alone cannot safely infer a project root, so first use must supply `--root` or `DELIVER_ROOT`. No shell background fork, automatic role-directory creation, PATH modification, or harness skill injection is performed. The team supplies root and sender context; the caller chooses the target role. The short form `send ROLE MESSAGE` ensures the service automatically.
 
@@ -77,7 +79,7 @@ Use an existing team root with role directories, or create a test layout:
 
 ```sh
 TEAM=/absolute/path/to/team
-mkdir -p "$TEAM/角色/dev" "$TEAM/角色/gm"
+mkdir -p "$TEAM/agents/dev" "$TEAM/agents/gm"
 ```
 
 ### Automatic user service
@@ -196,7 +198,7 @@ Language selection is **per CLI invocation**, not a persisted project or recipie
 
 ## Example: keep role identity when agents are auto-renamed
 
-An auto-rename plugin may change an agent or pane's display name to describe its current task. That display name need not be its stable routing role. If the role directories and agent CWDs stay unchanged, the optional [`herdr-send.sh` example](../examples/herdr-send.sh) derives the **sender** from its current role directory instead of the display name, then calls the installed native `hrelay` command. This is a team-side convenience patch, not a dependency on or integration with a particular rename plugin. Recipient lookup remains the relay's CWD-based routing described above.
+An auto-rename plugin may change an agent or pane's display name; that name is not the routing role. The optional [`herdr-send.sh` example](../examples/herdr-send.sh) now requires an explicit sender: `HERDR_SEND_FROM`, falling back to `HERDR_RELAY_FROM`. It no longer scans a language-specific directory or infers identity from the caller's CWD. A previously copied wrapper is not upgraded automatically. Recipient discovery uses the foreground-directory rule above.
 
 Copy the example into **your team's** `scripts/` directory, not the plugin's managed checkout:
 
@@ -204,7 +206,7 @@ Copy the example into **your team's** `scripts/` directory, not the plugin's man
 team/
 ├── scripts/
 │   └── herdr-send.sh
-└── 角色/
+└── agents/
     ├── dev/
     └── gm/
 ```
@@ -216,9 +218,9 @@ mkdir -p "$TEAM/scripts"
 cp /absolute/path/to/herdr-async-message-relay/examples/herdr-send.sh "$TEAM/scripts/herdr-send.sh"
 chmod +x "$TEAM/scripts/herdr-send.sh"
 
-# From the dev role directory, even if its display name has changed:
-cd "$TEAM/角色/dev"
-../../scripts/herdr-send.sh gm 'Task 123 is ready. Evidence: /absolute/path/to/report.md. Please review.'
+# The sender is explicit even if its display name has changed:
+cd "$TEAM/agents/dev"
+HERDR_RELAY_FROM=dev ../../scripts/herdr-send.sh gm 'Task 123 is ready. Evidence: /absolute/path/to/report.md. Please review.'
 
 # From the team root, declare the actual sender explicitly:
 cd "$TEAM"
@@ -238,11 +240,11 @@ hrelay --root "$TEAM" send --from dev --key task-123-report-v1 gm 'Complete repo
 
 Without `HERDR_SEND_IDEMPOTENCY_KEY`, the wrapper omits `--key`. Important boundaries:
 
-- Root comes from the script's parent directory. **Copy it to `<team-root>/scripts/herdr-send.sh` before use**; running it inside this repository's `examples/` would select this repository as root.
-- Sender inference uses the physical CWD of `角色/<role>` or a subdirectory. From elsewhere, set `HERDR_SEND_FROM` to the actual authorized sender. This wrapper uses `HERDR_SEND_FROM`, not the native CLI's `HERDR_RELAY_FROM`; it passes `--from` explicitly. Missing or ambiguous identity is rejected.
-- Both role directories must already exist. Names follow the same role-name rules as the native CLI. The literal `角色/` directory is still required; this example does not add a configurable or English-named role registry.
-- An auto-rename that changes only a display name does not affect this inference. Moving role directories or changing a recipient's reported CWD is different: recipients are matched by the role-root rules above (exact path, then a path inside the role directory, then an exact `foreground_cwd`), and the match must stay unique. Sender inference from a subdirectory does not relax that rule.
-- Requires Bash and `hrelay` v0.2+ on the calling agent's PATH. No jq, plugin discovery, checkout binary fallback, or old `HERDR_RELAY_BIN` / `HERDR_DELIVER_BIN` override is used. The example retains Traditional Chinese diagnostics.
+- Root uses `DELIVER_ROOT` when set, otherwise the script's parent directory. Copy it to `<team-root>/scripts/herdr-send.sh` or provide the intended root explicitly.
+- Sender uses `HERDR_SEND_FROM`, then `HERDR_RELAY_FROM`; missing identity is rejected. It passes `--from` explicitly and never guesses from the current path.
+- Native CLI validation owns name safety; role directories need not be present or online at enqueue time. Unknown recipients remain queued until a matching seat appears.
+- Renaming a display label does not change routing; changing the foreground directory basename does.
+- Requires Bash and a compatible native `hrelay` on PATH. No jq, agent discovery in the wrapper, checkout fallback or legacy binary override is used. Wrapper diagnostics are English; this file documents unreleased wrapper behavior.
 - The body remains one unchanged argument, including newlines; use proper shell quoting. The wrapper neither reads rename-plugin data nor injects keys or direct prompts.
 - Short-form send ensures the same project service before enqueueing. First registration still needs the intended absolute `HERDR_SOCKET_PATH`; custom state/service paths must remain consistent. A persistent pause is not bypassed.
 - `accepted: true` still means stored, not read or task acceptance. Preserve the returned ID/key and follow the uncertainty rules above rather than blindly resending.

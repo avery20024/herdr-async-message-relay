@@ -11,6 +11,7 @@ import (
 
 	"github.com/avery20024/herdr-async-message-relay/internal/claudeguard"
 	"github.com/avery20024/herdr-async-message-relay/internal/deliver"
+	"github.com/avery20024/herdr-async-message-relay/internal/roles"
 )
 
 type claudeHookError struct{ error }
@@ -55,10 +56,9 @@ func runClaudeGuard(ctx context.Context, root string, args []string, hook bool) 
 	if !hook && f.Arg(0) != "status" {
 		return errors.New("interception is now team-wide; use claude-guard --team enable|disable")
 	}
-	// 發送方與目前工具的 CWD 不用來猜測接收角色。
-	info, err := os.Stat(filepath.Join(c.Root, "角色", *role))
-	if err != nil || !info.IsDir() {
-		return errors.New("guard role directory must exist")
+	// Hook 身分由啟動環境提供，SessionEnd 也可在座位離開後記錄，不要求固定目錄。
+	if !roles.ValidName(*role) {
+		return errors.New("invalid guard role")
 	}
 	if hook {
 		event, err := claudeguard.Decode(os.Stdin)

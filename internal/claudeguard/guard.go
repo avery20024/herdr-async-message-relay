@@ -13,9 +13,10 @@ import (
 	"regexp"
 	"syscall"
 	"time"
+
+	"github.com/avery20024/herdr-async-message-relay/internal/roles"
 )
 
-var rolePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 var panePattern = regexp.MustCompile(`^w[0-9A-Za-z]+:p[0-9A-Za-z]+$`)
 
 const maxRecord = 64 * 1024
@@ -115,7 +116,7 @@ func Decode(r io.Reader) (Event, error) {
 	return e, err
 }
 func (m Manager) directory(role string) (string, error) {
-	if !rolePattern.MatchString(role) {
+	if !roles.ValidName(role) {
 		return "", errors.New("invalid guard role")
 	}
 	return filepath.Join(m.Dir, role), nil

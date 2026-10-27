@@ -53,6 +53,9 @@ func TestCorruptObservationIsBlockingHookError(t *testing.T) {
 	for _, policy := range []string{`broken`, `[]`} {
 		t.Run(policy, func(t *testing.T) {
 			c := cliConfig(t)
+			if err := run(t.Context(), []string{"--root", c.Root, "claude-guard", "--team", "enable"}); err != nil {
+				t.Fatal(err)
+			}
 			if err := os.Mkdir(filepath.Join(c.Root, "角色", "gm"), 0700); err != nil {
 				t.Fatal(err)
 			}

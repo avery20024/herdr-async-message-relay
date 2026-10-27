@@ -240,6 +240,20 @@ func TestExplicitRestartAppliesSettingsButNormalEnsureDoesNot(t *testing.T) {
 	}
 }
 
+func TestRegistrationDoesNotRequireRoleContainer(t *testing.T) {
+	f := setup(t, "darwin")
+	if err := os.RemoveAll(filepath.Join(f.c.Root, "角色")); err != nil {
+		t.Fatal(err)
+	}
+	f.ready.Store(true)
+	if err := f.m.Ensure(context.Background(), f.c, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 0 {
+		t.Fatal("healthy generic-root relay must not install or restart a service")
+	}
+}
+
 func TestFirstRegistrationNeedsHerdrContextAndLiveProject(t *testing.T) {
 	f := setup(t, "darwin")
 	f.m.Environment = nil
@@ -247,7 +261,7 @@ func TestFirstRegistrationNeedsHerdrContextAndLiveProject(t *testing.T) {
 		t.Fatalf("must not guess Herdr context: %v", err)
 	}
 	f.m.Environment = []string{"HERDR_SOCKET_PATH=/test/herdr.sock"}
-	if err := os.RemoveAll(filepath.Join(f.c.Root, "角色")); err != nil {
+	if err := os.RemoveAll(f.c.Root); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.m.Ensure(context.Background(), f.c, false); err == nil || len(f.calls) != 0 {

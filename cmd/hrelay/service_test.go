@@ -110,7 +110,9 @@ func TestServiceCLIRejectsInvalidCommandsAndSendBeforeValidation(t *testing.T) {
 	c := cliConfig(t)
 	base := filepath.Join(t.TempDir(), "not-created")
 	t.Setenv("HERDR_RELAY_SERVICE_HOME", base)
-	if err := run(context.Background(), []string{"--root", c.Root, "send", "--ensure", "--from", "missing", "--to", "gm", "--body", "body"}); err == nil {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	if err := run(context.Background(), []string{"--root", c.Root, "send", "--ensure", "--from", "invalid/role", "--to", "gm", "--body", "body"}); err == nil {
 		t.Fatal("invalid request must be rejected")
 	}
 	if _, err := os.Stat(base); !os.IsNotExist(err) {
