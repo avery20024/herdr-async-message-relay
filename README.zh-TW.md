@@ -37,37 +37,9 @@ hrelay --root "$TEAM" server on
 hrelay --root "$TEAM" ui
 ```
 
-已設定 `DELIVER_ROOT` 的環境可直接執行 `hrelay ui`。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**尚未發布的預設調整：**UI 預設每秒自動刷新，缺少 Claude 攔截政策時預設**關閉**，保留既有明確設定。Ctrl+P 使用本 root 共用的「全域」標籤與兩行淡化提示；`?` 分為瀏覧、篩選、設置、其他。**已發布 v0.6.0 行為：**`Ctrl+P` 可明確儲存團隊共用、預設開啟的 Claude 問答攔截開關；已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。這是 worker 行為設定，不是佇列內容或本機外觀設定，團隊設定要求 UI 與 worker 均為 v0.6.0。已發布 v0.6.0 的團隊政策缺失時預設開啟；攔截開啟時，未初始化的 Claude 角色會延後通知，升級前須先確認遷移安排。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
+已設定 `DELIVER_ROOT` 的環境可直接執行 `hrelay ui`。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**預設：**UI 預設每秒自動刷新，缺少 Claude 攔截政策時預設**關閉**，保留既有明確設定。Ctrl+P 使用本 root 共用的「全域」標籤與兩行淡化提示；`?` 分為瀏覧、篩選、設置、其他。已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。現行路由與缺省政策需重啟為對應版本的 worker；發布或更新 CLI／UI 不會替換運行中的 worker。較早版本（例如 v0.6.0）缺少政策時預設開啟，升級保留既有明確開啟／關閉設定；攔截開啟時，未初始化的 Claude 角色仍會延後通知。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
 
-v0.6.0 另加入依滑鼠位置分區捲動、左下淡色說明置底、欄位值強調，以及 `gg`／`G` 跳至已載入首尾資料。變更與升級注意事項見 [v0.6.0 發布說明](docs/releases/v0.6.0.md)，完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
-
-## UI 主題
-
-目前提供五種內建主題：
-
-| 主題 | 外觀 |
-| --- | --- |
-| **Terminal**（預設） | 依終端的淺色／深色背景調整。 |
-| **Catppuccin Latte** | 淺色背景，搭配紫色重點色。 |
-| **Dracula** | 深色背景，搭配紫色重點色。 |
-| **Rosé Pine** | 柔和深色調，搭配玫瑰／淡紫色重點色。 |
-| **Vesper** | 近黑背景，搭配暖桃色重點色。 |
-
-按 `Ctrl+P`，用 `↑`／`↓` 選擇 **Theme／主題**，再以 `←`／`→` 切換，按 `Enter` 儲存套用，或按 `Esc` 取消。主題僅影響 UI，不會修改終端的全域配色設定。
-
-以下預覽以同一份已遮蔽的擷取資料，由 v0.5.0 UI 渲染；訊息本文、本機路徑與內部識別資訊均保持遮蔽。深色預覽採用搭配主題的終端底色，實際畫布可能隨終端設定而不同。
-
-### Catppuccin Latte
-
-![Catppuccin Latte UI 主題：淺色背景與紫色重點色](docs/assets/hrelay-ui-catppuccin-latte.png)
-
-### Dracula
-
-![Dracula UI 主題：深色背景與紫色重點色](docs/assets/hrelay-ui-dracula.png)
-
-### Vesper
-
-![Vesper UI 主題：近黑背景與暖桃色重點色](docs/assets/hrelay-ui-vesper.png)
+各版本變更、路由風險及升級注意事項見 [發布說明目錄](docs/releases/)。v0.6.0 加入依滑鼠位置分區捲動、左下淡色說明置底、欄位值強調，以及 `gg`／`G` 跳至已載入首尾資料。變更與升級注意事項見 [v0.6.0 發布說明](docs/releases/v0.6.0.md)，完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
 
 ## Installation
 
@@ -111,7 +83,7 @@ wsl --install -d Ubuntu
 
 ### 其他安裝方式
 
-- 固定版本或回退可用 `herdr plugin install avery20024/herdr-async-message-relay --ref v0.6.0`；一般安裝省略 `--ref`，後續更新沿用安裝時記錄的 ref。
+- 固定版本或回退可用 `herdr plugin install avery20024/herdr-async-message-relay --ref <tag>`；一般安裝省略 `--ref`，後續更新沿用安裝時記錄的 ref。
 - 從 [Releases](https://github.com/avery20024/herdr-async-message-relay/releases) 下載平台套件，核對 `checksums.txt` 後解壓，保留附帶授權與第三方聲明。
 - 從 checkout 安裝、修復 PATH、升級行為與 checksum 信任邊界見 [安裝細節](docs/cli-reference.zh-TW.md#安裝細節)。
 
@@ -125,16 +97,44 @@ export HERDR_RELAY_FROM=dev
 hrelay send gm 'Task 123 已備妥，請查核證據。'
 ```
 
-**尚未發布的角色探索重構：**worker 先取得 `herdr agent list`，解析每個 AI 的絕對 `foreground_cwd` 與符號連結，實體目錄必須嚴格位於本 relay root 內，再取 basename 作角色名；中間目錄名稱與語言不限，例如 `agents/reviewer` 或 `開発/担当A`。不退回 `cwd` 或按舊角色目錄排名；路徑缺失、無效或同名衝突時不投遞。有效名稱可在座位離線時先入列，名稱以 Unicode 字母開頭，後續允許字母、組合符號、數字、底線與連字號，最多 64 UTF-8 bytes。請保持前景目錄穩定：進入子目錄會改變推導的角色。此變更不在已發布 v0.6.0 內，也不會自動初始化 Claude 問答觀測。設定與 SOP 整合見 [agent 文件（英文）](docs/agent-usage.md)、可選 [skill（英文）](skills/hrelay/SKILL.md) 及 [CLI 參考](docs/cli-reference.zh-TW.md)。
+**角色探索：**worker 先取得 `herdr agent list`，解析每個 AI 的絕對 `foreground_cwd` 與符號連結，實體目錄必須嚴格位於本 relay root 內，再取 basename 作角色名；中間目錄名稱與語言不限，例如 `agents/reviewer` 或 `開発/担当A`。不退回 `cwd` 或按舊角色目錄排名；路徑缺失、無效或同名衝突時不投遞。有效名稱可在座位離線時先入列，名稱以 Unicode 字母開頭，後續允許字母、組合符號、數字、底線與連字號，最多 64 UTF-8 bytes。請保持前景目錄穩定：進入子目錄會改變推導的角色。任意深度的同名目錄都參與定址；重名座位會使訊息維持 queued，若只剩另一個同名座位，它可接收該角色訊息。請使用可信任 root、避免無關同名座位。名稱精確比對，未做 Unicode 正規化或同形字辨識。此路由不適用於 v0.6.0 及更早版本，也不會自動初始化 Claude 問答觀測。設定與 SOP 整合見 [agent 文件（英文）](docs/agent-usage.md)、可選 [skill（英文）](skills/hrelay/SKILL.md) 及 [CLI 參考](docs/cli-reference.zh-TW.md)。
 
 **入列成功不等於已讀。** `accepted: true` 代表已儲存，不是已投遞、已讀或已核准。保留 message ID／冪等 key，不要換新 key 盲目重送。若提交結果無法觀測，worker 會在短暫退避後依 FIFO 重送同一批訊息，最多 `DELIVER_MAX_ATTEMPTS` 次，因此投遞語意為 **at-least-once**；信封保留每則 message ID 供接收端辨識重複，詳見 [復原與投遞語意](docs/cli-reference.zh-TW.md#復原與投遞語意)。
+
+## UI 主題
+
+目前提供五種內建主題：
+
+| 主題 | 外觀 |
+| --- | --- |
+| **Terminal**（預設） | 依終端的淺色／深色背景調整。 |
+| **Catppuccin Latte** | 淺色背景，搭配紫色重點色。 |
+| **Dracula** | 深色背景，搭配紫色重點色。 |
+| **Rosé Pine** | 柔和深色調，搭配玫瑰／淡紫色重點色。 |
+| **Vesper** | 近黑背景，搭配暖桃色重點色。 |
+
+按 `Ctrl+P`，用 `↑`／`↓` 選擇 **Theme／主題**，再以 `←`／`→` 切換，按 `Enter` 儲存套用，或按 `Esc` 取消。主題僅影響 UI，不會修改終端的全域配色設定。
+
+以下預覽以同一份已遮蔽的擷取資料，由 v0.5.0 UI 渲染；訊息本文、本機路徑與內部識別資訊均保持遮蔽。深色預覽採用搭配主題的終端底色，實際畫布可能隨終端設定而不同。
+
+### Catppuccin Latte
+
+![Catppuccin Latte UI 主題：淺色背景與紫色重點色](docs/assets/hrelay-ui-catppuccin-latte.png)
+
+### Dracula
+
+![Dracula UI 主題：深色背景與紫色重點色](docs/assets/hrelay-ui-dracula.png)
+
+### Vesper
+
+![Vesper UI 主題：近黑背景與暖桃色重點色](docs/assets/hrelay-ui-vesper.png)
 
 ## 文件
 
 - [UI 鍵位、主題、偏好設定及限制（英文）](docs/ui.md)
 - [CLI 操作、查詢、服務、設定、復原及開發](docs/cli-reference.zh-TW.md)
 - [Agent 設定與 SOP 整合（英文）](docs/agent-usage.md)
-- [Claude 問答安全閘門](docs/claude-question-guard.md) — 尚未發布版本的缺省攔截關閉；v0.6.0 為開啟，Hooks 仍需明確接線；不保證排除所有競態
+- [Claude 問答安全閘門](docs/claude-question-guard.md) — 缺省攔截關閉（v0.6.0 為開啟），Hooks 仍需明確接線；不保證排除所有競態
 
 佇列歷史可能含完整訊息與敏感路徑，分享截圖或匯出前請先檢查遮蔽；安全邊界為本機 OS 帳號，詳見 [安全與隱私](docs/cli-reference.zh-TW.md#安全與隱私)。
 

@@ -37,37 +37,9 @@ hrelay --root "$TEAM" server on
 hrelay --root "$TEAM" ui
 ```
 
-For a configured environment with `DELIVER_ROOT`, just run `hrelay ui`. The UI does not start or upgrade workers, send messages or resolve uncertain batches. **Unreleased defaults:** the UI starts with one-second auto refresh, and missing Claude interception policy defaults **off**, preserving explicit saved policies. Ctrl+P uses a global label scoped to this relay root and two muted hints; `?` groups shortcuts into Browsing, Filters, Settings, and Other. **Published v0.6.0 behavior:** Ctrl+P can explicitly save a team-wide, default-on Claude question interception policy; scoped Hooks keep recording question times when interception is off. This changes worker behavior, not queue records or local theme settings. Both UI and worker need v0.6.0 for team settings. In published v0.6.0, missing team policy defaults on; when interception is enabled, uninitialized Claude roles defer notifications, so review migration before upgrading. See [setup, migration and limitations](docs/claude-question-guard.md). CLI and worker must both be v0.5.0-compatible; a plugin update does not replace an already-running worker.
+For a configured environment with `DELIVER_ROOT`, just run `hrelay ui`. The UI does not start or upgrade workers, send messages or resolve uncertain batches. **Defaults:** the UI starts with one-second auto refresh, and missing Claude interception policy defaults **off**, preserving explicit saved policies. Ctrl+P uses a global label scoped to this relay root and two muted hints; `?` groups shortcuts into Browsing, Filters, Settings, and Other. Scoped Hooks keep recording question times when interception is off. Restart the worker on the matching version to use the current routing and missing-policy default; publishing or updating the CLI/UI does not replace a running worker. Earlier releases (for example v0.6.0) default missing policy to on; existing explicit on/off settings remain unchanged on upgrade. When interception is enabled, uninitialized Claude roles still defer notifications. See [setup, migration and limitations](docs/claude-question-guard.md). CLI and worker must both be v0.5.0-compatible; a plugin update does not replace an already-running worker.
 
-v0.6.0 also adds pointer-targeted wheel scrolling, pinned muted metadata notices, accented values, and `gg` / `G` jumps to the first / last currently loaded message. See [v0.6.0 changes and upgrade cautions](docs/releases/v0.6.0.md) and [UI controls and preferences](docs/ui.md). For scripts, JSON inspection, first-time service setup, CLI language flags or recovery, see the [CLI operations and advanced reference](docs/cli-reference.md).
-
-## UI themes
-
-Five built-in themes are available:
-
-| Theme | Appearance |
-| --- | --- |
-| **Terminal** (default) | Adapts to the terminal's light/dark background. |
-| **Catppuccin Latte** | Light background with purple accents. |
-| **Dracula** | Dark background with purple accents. |
-| **Rosé Pine** | Muted dark tones with soft rose/purple accents. |
-| **Vesper** | Near-black background with warm peach accents. |
-
-Press `Ctrl+P`, select **Theme** with `↑` / `↓`, choose with `←` / `→`, then press `Enter` to save and apply. `Esc` cancels. Themes affect the UI only, not your terminal's global color settings.
-
-The previews below use the same redacted capture data, rendered by the v0.5.0 UI. Message contents, local paths and internal identifiers remain hidden. Dark-theme previews use a matching terminal background; the actual canvas can vary with your terminal settings.
-
-### Catppuccin Latte
-
-![Catppuccin Latte UI theme: light background and purple accents](docs/assets/hrelay-ui-catppuccin-latte.png)
-
-### Dracula
-
-![Dracula UI theme: dark background and purple accents](docs/assets/hrelay-ui-dracula.png)
-
-### Vesper
-
-![Vesper UI theme: near-black background and warm peach accents](docs/assets/hrelay-ui-vesper.png)
+Per-release changes, routing risks and upgrade cautions are in [docs/releases](docs/releases/). v0.6.0 added pointer-targeted wheel scrolling, pinned muted metadata notices, accented values, and `gg` / `G` jumps to the first / last currently loaded message. See [v0.6.0 changes and upgrade cautions](docs/releases/v0.6.0.md) and [UI controls and preferences](docs/ui.md). For scripts, JSON inspection, first-time service setup, CLI language flags or recovery, see the [CLI operations and advanced reference](docs/cli-reference.md).
 
 ## Installation
 
@@ -111,7 +83,7 @@ Restart if requested and finish Ubuntu's first-run account setup, then run the *
 
 ### Other installation options
 
-- Pin or roll back with `herdr plugin install avery20024/herdr-async-message-relay --ref v0.6.0`. Normal installs can omit `--ref`; updates follow the ref recorded at installation.
+- Pin or roll back with `herdr plugin install avery20024/herdr-async-message-relay --ref <tag>`. Normal installs can omit `--ref`; updates follow the ref recorded at installation.
 - Download a platform archive from [Releases](https://github.com/avery20024/herdr-async-message-relay/releases), verify `checksums.txt` and extract it. Keep the included license and third-party notices.
 - For checkout installation, PATH repair, upgrade behavior and checksum boundaries, see [installation details](docs/cli-reference.md#installation-details).
 
@@ -125,16 +97,44 @@ export HERDR_RELAY_FROM=dev
 hrelay send gm 'Task 123 is ready. Please inspect the evidence.'
 ```
 
-**Unreleased role discovery:** the worker starts with `herdr agent list`, resolves each agent's absolute `foreground_cwd` through symlinks, and uses its basename as the role only when the resulting directory is strictly inside this relay's root. Any intermediate directory names/languages are allowed, such as `agents/reviewer` or `開発/担当A`. There is no `cwd` fallback or role-directory ranking. Missing/invalid foreground paths and ambiguous roles are not delivered. A valid role name can be queued while its seat is offline; names start with a Unicode letter, followed by Unicode letters/marks/digits, `_` or `-`, up to 64 UTF-8 bytes. Keep the foreground directory stable: entering a child directory changes the derived role. This routing change is not included in the published v0.6.0 binary and does not initialize Claude question observations. Setup and SOP integration: [agent guide](docs/agent-usage.md), optional [skill](skills/hrelay/SKILL.md), and [CLI reference](docs/cli-reference.md).
+**Role discovery:** the worker starts with `herdr agent list`, resolves each agent's absolute `foreground_cwd` through symlinks, and uses its basename as the role only when the resulting directory is strictly inside this relay's root. Any intermediate directory names/languages are allowed, such as `agents/reviewer` or `開発/担当A`. There is no `cwd` fallback or role-directory ranking. Missing/invalid foreground paths and ambiguous roles are not delivered. A valid role name can be queued while its seat is offline; names start with a Unicode letter, followed by Unicode letters/marks/digits, `_` or `-`, up to 64 UTF-8 bytes. Keep the foreground directory stable: entering a child directory changes the derived role. Any same-named directory at any depth participates: duplicate seats keep messages queued; if only another same-named seat remains, it can receive that role's messages. Use a trusted root and avoid unrelated same-named seats. Names are exact, without Unicode normalization or confusable detection. This routing is not available in v0.6.0 and earlier, and does not initialize Claude question observations. Setup and SOP integration: [agent guide](docs/agent-usage.md), optional [skill](skills/hrelay/SKILL.md), and [CLI reference](docs/cli-reference.md).
 
 **Acceptance is not a read receipt.** `accepted: true` means stored, not delivered, read or approved. Preserve the returned message ID / idempotency key, and never blindly resend with a new key. If a submission cannot be observed, the worker retries the same messages in FIFO order after a short backoff, up to `DELIVER_MAX_ATTEMPTS`; delivery is therefore **at least once**, and the envelope keeps each message ID so the receiver can recognise a repeat. See [recovery and delivery semantics](docs/cli-reference.md#recovery-and-delivery-semantics).
+
+## UI themes
+
+Five built-in themes are available:
+
+| Theme | Appearance |
+| --- | --- |
+| **Terminal** (default) | Adapts to the terminal's light/dark background. |
+| **Catppuccin Latte** | Light background with purple accents. |
+| **Dracula** | Dark background with purple accents. |
+| **Rosé Pine** | Muted dark tones with soft rose/purple accents. |
+| **Vesper** | Near-black background with warm peach accents. |
+
+Press `Ctrl+P`, select **Theme** with `↑` / `↓`, choose with `←` / `→`, then press `Enter` to save and apply. `Esc` cancels. Themes affect the UI only, not your terminal's global color settings.
+
+The previews below use the same redacted capture data, rendered by the v0.5.0 UI. Message contents, local paths and internal identifiers remain hidden. Dark-theme previews use a matching terminal background; the actual canvas can vary with your terminal settings.
+
+### Catppuccin Latte
+
+![Catppuccin Latte UI theme: light background and purple accents](docs/assets/hrelay-ui-catppuccin-latte.png)
+
+### Dracula
+
+![Dracula UI theme: dark background and purple accents](docs/assets/hrelay-ui-dracula.png)
+
+### Vesper
+
+![Vesper UI theme: near-black background and warm peach accents](docs/assets/hrelay-ui-vesper.png)
 
 ## Documentation
 
 - [UI controls, themes, preferences and limitations](docs/ui.md)
 - [CLI operations, inspection, services, configuration, recovery and development](docs/cli-reference.md)
 - [Agent setup and SOP integration](docs/agent-usage.md)
-- [Experimental Claude question guard](docs/claude-question-guard.md) — scoped Hooks and v0.6.0 team-policy migration; not a guarantee against every race
+- [Experimental Claude question guard](docs/claude-question-guard.md) — scoped Hooks and team-policy migration; not a guarantee against every race
 
 Queue history can contain full messages and sensitive paths. Inspect and redact screenshots or exports before sharing; the local OS account is the trust boundary. See [security and privacy](docs/cli-reference.md#security-and-privacy).
 
