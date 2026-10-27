@@ -41,34 +41,6 @@ hrelay --root "$TEAM" ui
 
 新路由風險及升級注意事項見 [v0.7.0 發布說明](docs/releases/v0.7.0.md)。v0.6.0 另加入依滑鼠位置分區捲動、左下淡色說明置底、欄位值強調，以及 `gg`／`G` 跳至已載入首尾資料。變更與升級注意事項見 [v0.6.0 發布說明](docs/releases/v0.6.0.md)，完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
 
-## UI 主題
-
-目前提供五種內建主題：
-
-| 主題 | 外觀 |
-| --- | --- |
-| **Terminal**（預設） | 依終端的淺色／深色背景調整。 |
-| **Catppuccin Latte** | 淺色背景，搭配紫色重點色。 |
-| **Dracula** | 深色背景，搭配紫色重點色。 |
-| **Rosé Pine** | 柔和深色調，搭配玫瑰／淡紫色重點色。 |
-| **Vesper** | 近黑背景，搭配暖桃色重點色。 |
-
-按 `Ctrl+P`，用 `↑`／`↓` 選擇 **Theme／主題**，再以 `←`／`→` 切換，按 `Enter` 儲存套用，或按 `Esc` 取消。主題僅影響 UI，不會修改終端的全域配色設定。
-
-以下預覽以同一份已遮蔽的擷取資料，由 v0.5.0 UI 渲染；訊息本文、本機路徑與內部識別資訊均保持遮蔽。深色預覽採用搭配主題的終端底色，實際畫布可能隨終端設定而不同。
-
-### Catppuccin Latte
-
-![Catppuccin Latte UI 主題：淺色背景與紫色重點色](docs/assets/hrelay-ui-catppuccin-latte.png)
-
-### Dracula
-
-![Dracula UI 主題：深色背景與紫色重點色](docs/assets/hrelay-ui-dracula.png)
-
-### Vesper
-
-![Vesper UI 主題：近黑背景與暖桃色重點色](docs/assets/hrelay-ui-vesper.png)
-
 ## Installation
 
 支援 **macOS／Linux 的 arm64、amd64**，需要 **Herdr 0.9.3 以上**。在 Herdr 安裝插件：
@@ -128,6 +100,34 @@ hrelay send gm 'Task 123 已備妥，請查核證據。'
 **v0.7.0 角色探索：**worker 先取得 `herdr agent list`，解析每個 AI 的絕對 `foreground_cwd` 與符號連結，實體目錄必須嚴格位於本 relay root 內，再取 basename 作角色名；中間目錄名稱與語言不限，例如 `agents/reviewer` 或 `開発/担当A`。不退回 `cwd` 或按舊角色目錄排名；路徑缺失、無效或同名衝突時不投遞。有效名稱可在座位離線時先入列，名稱以 Unicode 字母開頭，後續允許字母、組合符號、數字、底線與連字號，最多 64 UTF-8 bytes。請保持前景目錄穩定：進入子目錄會改變推導的角色。任意深度的同名目錄都參與定址；重名座位會使訊息維持 queued，若只剩另一個同名座位，它可接收該角色訊息。請使用可信任 root、避免無關同名座位。名稱精確比對，未做 Unicode 正規化或同形字辨識。此變更不在 v0.6.0 內，也不會自動初始化 Claude 問答觀測。設定與 SOP 整合見 [agent 文件（英文）](docs/agent-usage.md)、可選 [skill（英文）](skills/hrelay/SKILL.md) 及 [CLI 參考](docs/cli-reference.zh-TW.md)。
 
 **入列成功不等於已讀。** `accepted: true` 代表已儲存，不是已投遞、已讀或已核准。保留 message ID／冪等 key，不要換新 key 盲目重送。若提交結果無法觀測，worker 會在短暫退避後依 FIFO 重送同一批訊息，最多 `DELIVER_MAX_ATTEMPTS` 次，因此投遞語意為 **at-least-once**；信封保留每則 message ID 供接收端辨識重複，詳見 [復原與投遞語意](docs/cli-reference.zh-TW.md#復原與投遞語意)。
+
+## UI 主題
+
+目前提供五種內建主題：
+
+| 主題 | 外觀 |
+| --- | --- |
+| **Terminal**（預設） | 依終端的淺色／深色背景調整。 |
+| **Catppuccin Latte** | 淺色背景，搭配紫色重點色。 |
+| **Dracula** | 深色背景，搭配紫色重點色。 |
+| **Rosé Pine** | 柔和深色調，搭配玫瑰／淡紫色重點色。 |
+| **Vesper** | 近黑背景，搭配暖桃色重點色。 |
+
+按 `Ctrl+P`，用 `↑`／`↓` 選擇 **Theme／主題**，再以 `←`／`→` 切換，按 `Enter` 儲存套用，或按 `Esc` 取消。主題僅影響 UI，不會修改終端的全域配色設定。
+
+以下預覽以同一份已遮蔽的擷取資料，由 v0.5.0 UI 渲染；訊息本文、本機路徑與內部識別資訊均保持遮蔽。深色預覽採用搭配主題的終端底色，實際畫布可能隨終端設定而不同。
+
+### Catppuccin Latte
+
+![Catppuccin Latte UI 主題：淺色背景與紫色重點色](docs/assets/hrelay-ui-catppuccin-latte.png)
+
+### Dracula
+
+![Dracula UI 主題：深色背景與紫色重點色](docs/assets/hrelay-ui-dracula.png)
+
+### Vesper
+
+![Vesper UI 主題：近黑背景與暖桃色重點色](docs/assets/hrelay-ui-vesper.png)
 
 ## 文件
 

@@ -41,34 +41,6 @@ For a configured environment with `DELIVER_ROOT`, just run `hrelay ui`. The UI d
 
 See [v0.7.0 changes, routing risks and upgrade cautions](docs/releases/v0.7.0.md). v0.6.0 also adds pointer-targeted wheel scrolling, pinned muted metadata notices, accented values, and `gg` / `G` jumps to the first / last currently loaded message. See [v0.6.0 changes and upgrade cautions](docs/releases/v0.6.0.md) and [UI controls and preferences](docs/ui.md). For scripts, JSON inspection, first-time service setup, CLI language flags or recovery, see the [CLI operations and advanced reference](docs/cli-reference.md).
 
-## UI themes
-
-Five built-in themes are available:
-
-| Theme | Appearance |
-| --- | --- |
-| **Terminal** (default) | Adapts to the terminal's light/dark background. |
-| **Catppuccin Latte** | Light background with purple accents. |
-| **Dracula** | Dark background with purple accents. |
-| **Rosé Pine** | Muted dark tones with soft rose/purple accents. |
-| **Vesper** | Near-black background with warm peach accents. |
-
-Press `Ctrl+P`, select **Theme** with `↑` / `↓`, choose with `←` / `→`, then press `Enter` to save and apply. `Esc` cancels. Themes affect the UI only, not your terminal's global color settings.
-
-The previews below use the same redacted capture data, rendered by the v0.5.0 UI. Message contents, local paths and internal identifiers remain hidden. Dark-theme previews use a matching terminal background; the actual canvas can vary with your terminal settings.
-
-### Catppuccin Latte
-
-![Catppuccin Latte UI theme: light background and purple accents](docs/assets/hrelay-ui-catppuccin-latte.png)
-
-### Dracula
-
-![Dracula UI theme: dark background and purple accents](docs/assets/hrelay-ui-dracula.png)
-
-### Vesper
-
-![Vesper UI theme: near-black background and warm peach accents](docs/assets/hrelay-ui-vesper.png)
-
 ## Installation
 
 Supports **macOS and Linux, arm64 / amd64**, with **Herdr 0.9.3+**. Install the plugin in Herdr:
@@ -128,6 +100,34 @@ hrelay send gm 'Task 123 is ready. Please inspect the evidence.'
 **v0.7.0 role discovery:** the worker starts with `herdr agent list`, resolves each agent's absolute `foreground_cwd` through symlinks, and uses its basename as the role only when the resulting directory is strictly inside this relay's root. Any intermediate directory names/languages are allowed, such as `agents/reviewer` or `開発/担当A`. There is no `cwd` fallback or role-directory ranking. Missing/invalid foreground paths and ambiguous roles are not delivered. A valid role name can be queued while its seat is offline; names start with a Unicode letter, followed by Unicode letters/marks/digits, `_` or `-`, up to 64 UTF-8 bytes. Keep the foreground directory stable: entering a child directory changes the derived role. Any same-named directory at any depth participates: duplicate seats keep messages queued; if only another same-named seat remains, it can receive that role's messages. Use a trusted root and avoid unrelated same-named seats. Names are exact, without Unicode normalization or confusable detection. This routing change is not in v0.6.0 and does not initialize Claude question observations. Setup and SOP integration: [agent guide](docs/agent-usage.md), optional [skill](skills/hrelay/SKILL.md), and [CLI reference](docs/cli-reference.md).
 
 **Acceptance is not a read receipt.** `accepted: true` means stored, not delivered, read or approved. Preserve the returned message ID / idempotency key, and never blindly resend with a new key. If a submission cannot be observed, the worker retries the same messages in FIFO order after a short backoff, up to `DELIVER_MAX_ATTEMPTS`; delivery is therefore **at least once**, and the envelope keeps each message ID so the receiver can recognise a repeat. See [recovery and delivery semantics](docs/cli-reference.md#recovery-and-delivery-semantics).
+
+## UI themes
+
+Five built-in themes are available:
+
+| Theme | Appearance |
+| --- | --- |
+| **Terminal** (default) | Adapts to the terminal's light/dark background. |
+| **Catppuccin Latte** | Light background with purple accents. |
+| **Dracula** | Dark background with purple accents. |
+| **Rosé Pine** | Muted dark tones with soft rose/purple accents. |
+| **Vesper** | Near-black background with warm peach accents. |
+
+Press `Ctrl+P`, select **Theme** with `↑` / `↓`, choose with `←` / `→`, then press `Enter` to save and apply. `Esc` cancels. Themes affect the UI only, not your terminal's global color settings.
+
+The previews below use the same redacted capture data, rendered by the v0.5.0 UI. Message contents, local paths and internal identifiers remain hidden. Dark-theme previews use a matching terminal background; the actual canvas can vary with your terminal settings.
+
+### Catppuccin Latte
+
+![Catppuccin Latte UI theme: light background and purple accents](docs/assets/hrelay-ui-catppuccin-latte.png)
+
+### Dracula
+
+![Dracula UI theme: dark background and purple accents](docs/assets/hrelay-ui-dracula.png)
+
+### Vesper
+
+![Vesper UI theme: near-black background and warm peach accents](docs/assets/hrelay-ui-vesper.png)
 
 ## Documentation
 
