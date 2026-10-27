@@ -106,12 +106,13 @@ func TestIdentityAndCorruptionFailClosed(t *testing.T) {
 		t.Fatal("corruption reset")
 	}
 }
-func TestDefaultOnAndDisable(t *testing.T) {
+func TestDefaultOffAndExplicitEnableDisable(t *testing.T) {
 	m := Manager{Dir: t.TempDir()}
 	release, enabled, err := m.Acquire(t.Context(), "gm", "wC:p5", "")
-	if err == nil || !enabled || release != nil {
-		t.Fatalf("missing Hooks should defer: %v %v", enabled, err)
+	if err != nil || enabled || release == nil {
+		t.Fatalf("default off must allow missing Hooks: %v %v", enabled, err)
 	}
+	release()
 	if err := m.Configure(t.Context(), "gm", true); err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""以封閉 PATH 的假原生 hrelay 驗證角色推導，不通知真實座位。"""
+"""以隔離 PATH 驗證明確身分與不依賴語言目錄的相容入口。"""
 import json
 import os
 from pathlib import Path
@@ -17,8 +17,6 @@ class SendTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name).resolve()
         (self.root / "scripts").mkdir()
-        for role in ("dev", "gm"):
-            (self.root / "角色" / role).mkdir(parents=True)
         self.bin = self.root / "bin"
         self.bin.mkdir()
         (self.bin / "dirname").symlink_to(shutil.which("dirname"))
@@ -34,8 +32,9 @@ sys.exit(int(os.environ.get("MOCK_CODE", "0")))
         self.script = self.root / "scripts/herdr-send.sh"
         shutil.copyfile(SCRIPT, self.script)
         self.env = dict(os.environ, PATH=str(self.bin), MOCK_ROOT=str(self.root))
-        for key in ("HERDR_SEND_FROM", "HERDR_RELAY_BIN", "HERDR_DELIVER_BIN", "HERDR_SEND_IDEMPOTENCY_KEY"):
+        for key in ("DELIVER_ROOT", "HERDR_RELAY_FROM", "HERDR_SEND_FROM", "HERDR_SEND_IDEMPOTENCY_KEY"):
             self.env.pop(key, None)
+        self.env["HERDR_RELAY_FROM"] = "dev"
 
     def tearDown(self):
         self.temp.cleanup()
@@ -43,7 +42,7 @@ sys.exit(int(os.environ.get("MOCK_CODE", "0")))
     def run_send(self, args=None, code=0, cwd=None):
         result = subprocess.run(["/bin/bash", str(self.script)] +
                                 (["gm", "訊息\n第二行 'quotes' $(touch never)"] if args is None else args),
-                                env=self.env, cwd=cwd or self.root / "角色/dev",
+                                env=self.env, cwd=cwd or self.root,
                                 capture_output=True, text=True, timeout=5)
         self.assertEqual(result.returncode, code, (result.stdout, result.stderr))
         return result
@@ -55,76 +54,58 @@ sys.exit(int(os.environ.get("MOCK_CODE", "0")))
     def test_native_short_send_and_exact_body(self):
         self.run_send()
         self.assertEqual(self.calls(), [["--root", str(self.root), "send", "--from", "dev", "gm", "訊息\n第二行 'quotes' $(touch never)"]])
-        self.assertFalse((self.root / "角色/dev/never").exists())
+        self.assertFalse((self.root / "never").exists())
 
-    def test_role_subdirectory(self):
-        sub = self.root / "角色/dev/sub"
-        sub.mkdir()
-        self.run_send(cwd=sub)
-        self.assertEqual(self.calls()[0][3:5], ["--from", "dev"])
+    def test_no_layout_or_online_seat_required(self):
+        self.run_send(args=["offline", "queued"])
+        self.assertEqual(self.calls()[0][-2:], ["offline", "queued"])
+        self.assertFalse((self.root / "角色").exists())
 
-    def test_explicit_sender_from_root(self):
-        self.env["HERDR_SEND_FROM"] = "dev"
-        self.run_send(cwd=self.root)
-        self.assertEqual(self.calls()[0][3:5], ["--from", "dev"])
+    def test_explicit_sender_overrides_launch_environment(self):
+        self.env["HERDR_SEND_FROM"] = "reviewer"
+        self.run_send()
+        self.assertEqual(self.calls()[0][3:5], ["--from", "reviewer"])
 
-    def test_root_does_not_guess_sender(self):
-        self.run_send(cwd=self.root, code=1)
+    def test_cwd_does_not_guess_sender(self):
+        del self.env["HERDR_RELAY_FROM"]
+        self.run_send(code=1)
         self.assertEqual(self.calls(), [])
 
-    def test_bad_arguments_and_roles(self):
-        for args in ([], ["gm"], ["gm", ""], ["../gm", "x"], ["missing", "x"], ["gm", "x", "--now"]):
+    def test_bad_arguments(self):
+        for args in ([], ["gm"], ["gm", ""], ["", "x"], ["gm", "x", "--now"]):
             self.run_send(args=args, code=1)
-        for sender in ("../dev", "missing"):
-            self.env["HERDR_SEND_FROM"] = sender
-            self.run_send(code=1)
         self.assertEqual(self.calls(), [])
 
     def test_idempotency_flag_precedes_positional_arguments(self):
         self.env["HERDR_SEND_IDEMPOTENCY_KEY"] = "task-123-report-1"
         self.run_send()
-        self.assertEqual(self.calls()[0][5:7], ["--key", "task-123-report-1"])
-        self.assertEqual(self.calls()[0][7], "gm")
+        self.assertEqual(self.calls()[0][5:8], ["--key", "task-123-report-1", "gm"])
 
-    def test_missing_path_command_does_not_use_project_binary(self):
-        local = self.root / "herdr-async-message-relay/bin/hrelay"
-        local.parent.mkdir(parents=True)
-        self.client.rename(local)
-        self.env["HERDR_RELAY_BIN"] = str(local)
-        self.env["HERDR_DELIVER_BIN"] = str(local)
+    def test_missing_path_command_has_no_fallback(self):
+        self.client.unlink()
         result = self.run_send(code=1)
-        self.assertIn("找不到 hrelay", result.stderr)
+        self.assertIn("hrelay not found", result.stderr)
         self.assertEqual(self.calls(), [])
 
-    def test_legacy_overrides_are_not_used(self):
-        self.env["HERDR_RELAY_BIN"] = "/nonexistent/old-client"
-        self.env["HERDR_DELIVER_BIN"] = "/nonexistent/legacy-client"
+    def test_explicit_root_is_used(self):
+        self.env["DELIVER_ROOT"] = str(self.root / "a different root")
         self.run_send()
-        self.assertEqual(len(self.calls()), 1)
+        self.assertEqual(self.calls()[0][1], self.env["DELIVER_ROOT"])
 
-    def test_no_plugin_discovery_or_jq_dependency(self):
-        for tool in ("herdr", "jq"):
-            path = self.bin / tool
-            path.write_text(f'''#!{sys.executable}
-import pathlib, sys
-pathlib.Path({str(self.root / "forbidden-discovery")!r}).touch()
-sys.exit(99)
-''')
-            path.chmod(0o755)
-        self.env["HERDR_BIN_PATH"] = str(self.bin / "herdr")
-        self.run_send()
-        self.assertFalse((self.root / "forbidden-discovery").exists())
+    def test_multilingual_names_preserved_for_native_validation(self):
+        self.env["HERDR_RELAY_FROM"] = "担当A"
+        self.run_send(args=["Réviseur", "test"])
+        self.assertEqual(self.calls()[0][3:], ["--from", "担当A", "Réviseur", "test"])
 
     def test_client_exit_code_is_preserved(self):
         self.env["MOCK_CODE"] = "9"
         self.run_send(code=9)
-        self.assertEqual(len(self.calls()), 1)
 
-    def test_ambiguous_physical_sender_is_rejected(self):
-        (self.root / "角色/gm").rmdir()
-        (self.root / "角色/gm").symlink_to(self.root / "角色/dev", target_is_directory=True)
-        self.run_send(code=1)
-        self.assertEqual(self.calls(), [])
+    def test_legacy_binary_overrides_are_not_used(self):
+        self.env["HERDR_RELAY_BIN"] = "/nonexistent/old-client"
+        self.env["HERDR_DELIVER_BIN"] = "/nonexistent/old-client"
+        self.run_send()
+        self.assertEqual(len(self.calls()), 1)
 
 
 if __name__ == "__main__":

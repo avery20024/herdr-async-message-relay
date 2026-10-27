@@ -8,7 +8,9 @@
 
 目前為早期版本，支援 macOS／Linux 的 arm64 與 amd64，Herdr 相容基準為 **0.9.3**，不支援 Windows。
 
-角色探索遵循 `<team-root>/角色/<role>`，`pane_id` 一律由 `herdr agent list` 取得。比對優先序為：agent 的 `cwd` 等於角色根目錄（或解析後的實體路徑）→ `cwd` 位於該角色目錄之下 → `foreground_cwd` 恰好等於角色根目錄。`cwd` 已屬於其他角色目錄的 agent 一律不用於本角色；符合者必須唯一，0 個或多個都代表不投遞並記下警告。角色名稱以小寫英文字母開頭，後續僅允許小寫英文字母、數字與連字號。尚未提供可設定的角色路由 registry；即使閱讀英文文件，目錄名稱仍須是字面的 `角色`。
+**尚未發布的角色探索（已發布 v0.6.0 尚無此行為）：**先由 `herdr agent list` 取得實際 AI，將絕對 `foreground_cwd` 與 relay root 解析為實體路徑，要求前景目錄既存且嚴格位於 root 內，再以實體 basename 作為角色名。不要求固定目錄名稱、不退回 `cwd`，也沒有精確／子目錄排名。root 本身、相對或不存在路徑、符號連結越界皆排除；同名角色即使只有一席 idle 仍視為衝突。pane／狀態序號無效也不投遞。名稱以 Unicode 字母開頭，後續可為字母、組合符號、數字、底線或連字號，最多 64 UTF-8 bytes；不允許分隔符、空白或控制字元。保持前景目錄穩定：進入子目錄會改變角色名。發送身分仍為明確宣告而非身分驗證；合法離線角色可先入列，不要求預建目錄。探索不會偽造 Claude SessionStart 或 ready。
+
+Guard 設定 API 的角色清單來自即時座位與既有觀測，不掃描固定目錄。探索失敗以 `discovery_error` 呈現，UI 會提示清單可能不完整，但不阻止緊急關閉攔截政策。
 
 自 v0.2.0 起，`service start`／`send --ensure` 可登記並啟動 **macOS launchd user agent** 或 **Linux systemd user service**。Herdr startup hook 會恢復已登記、未暫停的專案。安裝階段不會猜測專案位置，首次操作必須提供 `--root` 或 `DELIVER_ROOT`。不使用 shell 背景 fork、不自動建立角色目錄、不修改 PATH，也不自動注入 harness skill。團隊啟動設定提供 root 與真實發送角色，呼叫方選擇接收角色；短語法 `send ROLE MESSAGE` 預設自動確保服務就緒。
 
@@ -77,7 +79,7 @@ help 辨識遵循一般旗標解析規則：選項放在位置參數前；作為
 
 ```sh
 TEAM=/absolute/path/to/team
-mkdir -p "$TEAM/角色/dev" "$TEAM/角色/gm"
+mkdir -p "$TEAM/agents/dev" "$TEAM/agents/gm"
 ```
 
 ### 自動使用者服務
@@ -196,7 +198,7 @@ hrelay --lang auto --help
 
 ## 範例：自動 rename 後仍保留角色身分
 
-自動 rename 插件可能依當前任務修改 agent 或 pane 的顯示名稱，但顯示名稱不必等於穩定路由角色。只要角色目錄與 agent CWD 不變，可選的 [`herdr-send.sh` 範例](../examples/herdr-send.sh) 就能從當前角色目錄推導**發送角色**，再呼叫已安裝的原生 `hrelay`。這是團隊端的小補丁，不依賴特定 rename 插件，也不讀取或操作該插件；接收方仍由 relay 依前述 CWD 規則定位。
+自動 rename 可能修改顯示名稱，但顯示名稱不是路由角色。尚未發布的 [`herdr-send.sh` 範例](../examples/herdr-send.sh) 改用明確身分：優先 `HERDR_SEND_FROM`，其次 `HERDR_RELAY_FROM`，不掃描特定語言目錄或從目前 CWD 猜角色。已複製到團隊的舊腳本不會自動更新；接收方仍由 relay 依上述 foreground 規則探索。
 
 將腳本複製到**團隊專案**的 `scripts/`，不要放在插件 managed checkout 裡使用：
 
@@ -204,7 +206,7 @@ hrelay --lang auto --help
 team/
 ├── scripts/
 │   └── herdr-send.sh
-└── 角色/
+└── agents/
     ├── dev/
     └── gm/
 ```
@@ -216,9 +218,9 @@ mkdir -p "$TEAM/scripts"
 cp /absolute/path/to/herdr-async-message-relay/examples/herdr-send.sh "$TEAM/scripts/herdr-send.sh"
 chmod +x "$TEAM/scripts/herdr-send.sh"
 
-# 即使顯示名稱改變，仍從 dev 角色目錄推導身分：
-cd "$TEAM/角色/dev"
-../../scripts/herdr-send.sh gm 'Task 123 已備妥。證據：/absolute/path/to/report.md。請審查。'
+# 即使顯示名稱改變，仍使用明確身分：
+cd "$TEAM/agents/dev"
+HERDR_RELAY_FROM=dev ../../scripts/herdr-send.sh gm 'Task 123 已備妥。證據：/absolute/path/to/report.md。請審查。'
 
 # 從團隊根目錄執行時，明確指定實際發送角色：
 cd "$TEAM"
@@ -238,11 +240,11 @@ hrelay --root "$TEAM" send --from dev --key task-123-report-v1 gm '完整報告�
 
 未設定 `HERDR_SEND_IDEMPOTENCY_KEY` 時就省略 `--key`。請注意：
 
-- root 取自腳本所在目錄的上一層。**須先複製到 `<team-root>/scripts/herdr-send.sh`**；直接在本 repo 的 `examples/` 執行會把本 repo 當作 root。
-- sender 由 `角色/<role>` 或其子目錄的實體 CWD 推導；其他位置須設定代表實際且已授權角色的 `HERDR_SEND_FROM`。此 wrapper 讀取的是 `HERDR_SEND_FROM`，不是原生 CLI 的 `HERDR_RELAY_FROM`，並明確傳入 `--from`。無法確認或同時對應多個角色時拒絕執行。
-- 發送與接收角色目錄都須已存在，角色名稱規則與原生 CLI 一致。固定的 `角色/` 路徑仍是必要條件，不會因此新增英文目錄名或可設定角色 registry。
-- 只改顯示名稱不影響推導；移動角色目錄或改變接收方回報的 CWD 則不同。接收方仍須回報精確角色根目錄或其實體路徑；發送方可從子目錄推導，不代表接收方匹配也放寬。
-- 需要 Bash，且呼叫座位的 PATH 可找到 `hrelay` v0.2+。不依賴 jq、不探索 plugin、不退回 checkout binary，也不接受舊 `HERDR_RELAY_BIN`／`HERDR_DELIVER_BIN` 覆寫。範例保留繁體中文診斷訊息。
+- root 優先使用 `DELIVER_ROOT`，未設定時取腳本所在目錄的上一層。**須先複製到 `<team-root>/scripts/herdr-send.sh`**；直接在本 repo 的 `examples/` 執行會把本 repo 當作 root。
+- sender 優先使用 `HERDR_SEND_FROM`，其次為 `HERDR_RELAY_FROM`，明確傳入 `--from`；缺少身分即拒絕，不從 CWD 猜測。
+- 名稱安全由原生 CLI 統一驗證；合法離線角色可先入列，不要求固定目錄存在，等唯一座位出現才投遞。
+- 只改顯示名稱不影響路由；改變 foreground 目錄 basename 則改變角色名，沒有舊式 CWD 排名。
+- 需要 Bash，且呼叫座位的 PATH 可找到 `hrelay` v0.2+。不依賴 jq、不探索 plugin、不退回 checkout binary，也不接受舊 `HERDR_RELAY_BIN`／`HERDR_DELIVER_BIN` 覆寫。本版範例診斷採英文。
 - 原文與換行保持單一參數，請正確使用 shell 引號。腳本不注入按鍵，也不直接發送 prompt。
 - 短語法仍先確保相同專案的服務就緒，再入列。首次登記需要預期的絕對 `HERDR_SOCKET_PATH`，自訂 state／service 路徑須保持一致，不會繞過持久暫停。
 - `accepted: true` 仍只代表已儲存，不是已讀或接受任務。保留 ID／key，遵循不確定性規則，不盲目重送。

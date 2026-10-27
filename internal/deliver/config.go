@@ -5,16 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
+	"github.com/avery20024/herdr-async-message-relay/internal/roles"
 )
-
-var rolePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 type Config struct {
 	Root           string
@@ -57,9 +55,9 @@ func LoadConfig(root string) (c Config, err error) {
 	if err != nil {
 		return
 	}
-	info, e := os.Stat(filepath.Join(c.Root, "角色"))
+	info, e := os.Stat(c.Root)
 	if e != nil || !info.IsDir() {
-		err = i18n.Errorf("root must contain 角色 directory: %s", c.Root)
+		err = i18n.Errorf("root must be an existing directory: %s", c.Root)
 		return
 	}
 	base := os.Getenv("XDG_STATE_HOME")
@@ -115,12 +113,8 @@ func LoadConfig(root string) (c Config, err error) {
 func (c Config) Socket() string { return filepath.Join(c.StateDir, "deliver.sock") }
 func (c Config) Validate(r SendRequest) error {
 	for _, role := range []string{r.Sender, r.Recipient} {
-		if len(role) > 64 || !rolePattern.MatchString(role) {
+		if !roles.ValidName(role) {
 			return i18n.Errorf("invalid role: %q", role)
-		}
-		info, err := os.Stat(filepath.Join(c.Root, "角色", role))
-		if err != nil || !info.IsDir() {
-			return i18n.Errorf("role directory missing: %s", role)
 		}
 	}
 	if len(r.Key) < 1 || len(r.Key) > 200 {

@@ -99,6 +99,7 @@ func TestFooterTailBudgetAcrossScreensAndWidths(t *testing.T) {
 
 func TestFooterRegressionCountsLabelsAndFeedback(t *testing.T) {
 	m, _ := ready(t)
+	m.auto = false // 此案例保留手動模式的原始預算；自動模式仍由尺寸矩陣驗證。
 	m.width = 120
 	if footer := ansi.Strip(m.footerLine()); !strings.Contains(footer, "1/50+") {
 		t.Fatal("120-column count regression", footer)

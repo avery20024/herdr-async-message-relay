@@ -25,12 +25,12 @@ func checkDir(dir string) error {
 	return nil
 }
 
-// TeamPolicy 缺少設定時預設開啟；損毀不是停用。舊每角色政策不再控制投遞。
+// TeamPolicy 缺少設定時預設關閉；既有明確設定不變，損毀仍回報錯誤。
 func (m Manager) TeamPolicy() (Policy, error) {
-	p := Policy{Version: 1, Enabled: true}
+	p := Policy{Version: 1, Enabled: false}
 	err := readJSON(filepath.Join(m.Dir, "team-policy.json"), &p)
 	if errors.Is(err, os.ErrNotExist) {
-		return Policy{Version: 1, Enabled: true}, nil
+		return Policy{Version: 1, Enabled: false}, nil
 	}
 	return p, err
 }

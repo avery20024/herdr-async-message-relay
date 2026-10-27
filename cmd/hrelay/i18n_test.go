@@ -35,7 +35,10 @@ func captureOutput(t *testing.T, target **os.File, fn func()) string {
 }
 
 func TestLanguageSelectionBeforeProjectAndSideEffects(t *testing.T) {
-	rootWithoutRoles := t.TempDir()
+	rootWithoutRoles := t.TempDir() + "/not-a-directory"
+	if err := os.WriteFile(rootWithoutRoles, []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HERDR_RELAY_LANG", "zh-TW")
 	t.Setenv("LC_ALL", "en_US.UTF-8")
 	for _, test := range []struct {
@@ -45,8 +48,8 @@ func TestLanguageSelectionBeforeProjectAndSideEffects(t *testing.T) {
 		{[]string{}, "用法："},
 		{[]string{"--lang", "en"}, "usage:"},
 		{[]string{"--lang=auto"}, "usage:"},
-		{[]string{"--lang", "zh-TW", "--root", rootWithoutRoles, "send"}, "根目錄必須包含"},
-		{[]string{"--lang", "en", "--root", rootWithoutRoles, "send"}, "root must contain"},
+		{[]string{"--lang", "zh-TW", "--root", rootWithoutRoles, "send"}, "根目錄必須為既存目錄"},
+		{[]string{"--lang", "en", "--root", rootWithoutRoles, "send"}, "root must be an existing directory"},
 		{[]string{"--lang", "fr", "version"}, "unsupported language"},
 		{[]string{"--lang", "zh-TW", "cli", "install", "--bin-dir", "relative"}, "CLI 安裝目錄必須"},
 	} {

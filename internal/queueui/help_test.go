@@ -394,8 +394,8 @@ func TestHelpAllThemesLanguagesAndSizes(t *testing.T) {
 	m, _ := ready(t)
 	m.Update(key("?"))
 	doc := ansi.Strip(strings.Join(m.helpDocument(), "\n"))
-	if len(shortcutEntries) != 14 || len(m.helpDocument()) != 14 {
-		t.Fatal("concise list must have fourteen rows")
+	if len(shortcutEntries) != 14 || len(m.helpDocument()) != 21 {
+		t.Fatal("grouped list must have fourteen shortcuts, four headings and three separators")
 	}
 	seen := map[string]bool{}
 	for _, entry := range shortcutEntries {

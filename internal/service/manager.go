@@ -282,8 +282,8 @@ func (m *Manager) checkContext(r Record) error {
 func (m *Manager) Ensure(ctx context.Context, c deliver.Config, resume bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	if info, err := os.Stat(filepath.Join(c.Root, "角色")); err != nil || !info.IsDir() {
-		return i18n.Errorf("registered project must still contain a 角色 directory: %s", c.Root)
+	if info, err := os.Stat(c.Root); err != nil || !info.IsDir() {
+		return i18n.Errorf("registered project root must still be a directory: %s", c.Root)
 	}
 	unlock, err := m.lock(ctx, c)
 	if err != nil {
@@ -294,8 +294,8 @@ func (m *Manager) Ensure(ctx context.Context, c deliver.Config, resume bool) err
 }
 
 func (m *Manager) ensureLocked(ctx context.Context, c deliver.Config, resume bool) error {
-	if info, err := os.Stat(filepath.Join(c.Root, "角色")); err != nil || !info.IsDir() {
-		return i18n.Errorf("registered project must still contain a 角色 directory: %s", c.Root)
+	if info, err := os.Stat(c.Root); err != nil || !info.IsDir() {
+		return i18n.Errorf("registered project root must still be a directory: %s", c.Root)
 	}
 	r, err := m.load(c)
 	if errors.Is(err, os.ErrNotExist) {

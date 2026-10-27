@@ -25,7 +25,7 @@ func TestUnixDaemonEndToEndAndSingleInstance(t *testing.T) {
 	c.StateDir = state
 	fake := filepath.Join(state, "fake-herdr")
 	promptLog := filepath.Join(state, "prompt")
-	list := fmt.Sprintf(`{"result":{"agents":[{"cwd":%q,"pane_id":"wC:p5","agent_status":"idle","state_change_seq":1}]}}`, filepath.Join(c.Root, "角色", "gm"))
+	list := fmt.Sprintf(`{"result":{"agents":[{"foreground_cwd":%q,"pane_id":"wC:p5","agent_status":"idle","state_change_seq":1}]}}`, filepath.Join(c.Root, "角色", "gm"))
 	script := fmt.Sprintf("#!/bin/sh\nif [ \"$1 $2\" = 'agent list' ]; then\nprintf '%%s\\n' '%s'\nelse\nprintf '%%s' \"$4\" > '%s'\nprintf '%%s\\n' '{\"result\":{\"agent_status\":\"working\"}}'\nfi\n", list, promptLog)
 	if err = os.WriteFile(fake, []byte(script), 0700); err != nil {
 		t.Fatal(err)

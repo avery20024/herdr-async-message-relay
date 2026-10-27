@@ -2,6 +2,7 @@ package deliver
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,8 @@ import (
 
 func TestTeamGuardSettingsAPI(t *testing.T) {
 	s, c := fixture(t)
-	h := API{Store: s, Config: c}.Handler()
+	live := &fakeHerdr{agents: []Agent{seat(c, "dev", "idle", "w1:p1", 1), seat(c, "ba", "idle", "w1:p2", 1), seat(c, "gm", "idle", "w1:p3", 1), seat(c, "arch", "idle", "w1:p4", 1)}}
+	h := API{Store: s, Config: c, Herdr: live}.Handler()
 	request := func(method, body string) GuardSettings {
 		t.Helper()
 		out := httptest.NewRecorder()
@@ -27,7 +29,7 @@ func TestTeamGuardSettingsAPI(t *testing.T) {
 		return result
 	}
 	first := request("GET", "")
-	if !first.Policy.Enabled || first.ProjectRoot != c.Root || len(first.Observations) != 4 {
+	if first.Policy.Enabled || first.ProjectRoot != c.Root || len(first.Observations) != 4 {
 		t.Fatal(first)
 	}
 	m := claudeguard.Manager{Dir: filepath.Join(c.StateDir, "claude-guard")}
@@ -62,6 +64,24 @@ func TestTeamGuardSettingsAPI(t *testing.T) {
 		}
 	}
 }
+func TestGuardDiscoveryFailureDoesNotPreventDisable(t *testing.T) {
+	s, c := fixture(t)
+	m := claudeguard.Manager{Dir: filepath.Join(c.StateDir, "claude-guard")}
+	if err := m.Apply(t.Context(), "担当A", "w1:p1", claudeguard.Event{Name: "SessionStart", Session: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	h := API{Store: s, Config: c, Herdr: &fakeHerdr{listErr: errors.New("offline")}}.Handler()
+	out := httptest.NewRecorder()
+	h.ServeHTTP(out, httptest.NewRequest("PUT", "/v1/claude-guard", strings.NewReader(`{"version":1,"enabled":false}`)))
+	var result GuardSettings
+	if err := json.Unmarshal(out.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if out.Code != 200 || result.Policy.Enabled || result.DiscoveryError == "" || len(result.Observations) != 1 || result.Observations[0].Role != "担当A" {
+		t.Fatal(out.Code, out.Body.String())
+	}
+}
+
 func TestTeamGuardOffKeepsRecordingAndHerdrBlockedGate(t *testing.T) {
 	s, c := fixture(t)
 	m := claudeguard.Manager{Dir: filepath.Join(c.StateDir, "claude-guard")}

@@ -66,11 +66,13 @@ type Model struct {
 
 func NewModel(ctx context.Context, loader Loader, root string, language i18n.Language) *Model {
 	mono := noColorEnv()
-	m := &Model{ctx: ctx, loader: loader, root: root, language: language, baseLanguage: language, preferences: defaultPreferences(), dark: true, noColor: mono, loading: spinner.New()}
+	m := &Model{ctx: ctx, loader: loader, root: root, language: language, baseLanguage: language, preferences: defaultPreferences(), auto: true, dark: true, noColor: mono, loading: spinner.New()}
 	m.refreshTheme()
 	return m
 }
-func (m *Model) Init() tea.Cmd { return tea.Batch(m.fetch(false), tea.RequestBackgroundColor) }
+func (m *Model) Init() tea.Cmd {
+	return tea.Batch(m.fetch(false), tea.RequestBackgroundColor, m.tick())
+}
 
 func (m *Model) selectedID() string {
 	if len(m.rows) == 0 {

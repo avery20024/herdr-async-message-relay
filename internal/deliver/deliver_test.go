@@ -43,7 +43,7 @@ func enqueue(t *testing.T, s *Store, to, body string) sqlc.Message {
 	return m
 }
 func seat(c Config, role, status, pane string, seq int64) Agent {
-	return Agent{CWD: filepath.Join(c.Root, "角色", role), Pane: pane, Status: status, Seq: &seq}
+	return Agent{CWD: c.Root, ForegroundCWD: filepath.Join(c.Root, "角色", role), Pane: pane, Status: status, Seq: &seq}
 }
 func logger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
@@ -53,6 +53,7 @@ type fakeHerdr struct {
 	prompts []string
 	panes   []string
 	err     error
+	listErr error
 	lists   int
 	block   chan struct{}
 }
@@ -61,7 +62,7 @@ func (f *fakeHerdr) List(context.Context) ([]Agent, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.lists++
-	return append([]Agent{}, f.agents...), nil
+	return append([]Agent{}, f.agents...), f.listErr
 }
 func (f *fakeHerdr) Prompt(ctx context.Context, pane, body string) error {
 	f.mu.Lock()
@@ -440,7 +441,7 @@ func TestAPIValidationAndCommit(t *testing.T) {
 	if out := send(valid); out.Code != 202 {
 		t.Fatal(out.Code)
 	}
-	for _, body := range []string{`{}`, `null`, `{"sender":"../dev","recipient":"gm","body":"x","idempotency_key":"k2"}`, `{"sender":"dev","recipient":"missing","body":"x","idempotency_key":"k2"}`, `{"sender":"dev","recipient":"gm","body":"x","idempotency_key":"k2","unknown":1}`, valid + " {}"} {
+	for _, body := range []string{`{}`, `null`, `{"sender":"../dev","recipient":"gm","body":"x","idempotency_key":"k2"}`, `{"sender":"dev","recipient":"bad/role","body":"x","idempotency_key":"k2"}`, `{"sender":"dev","recipient":"gm","body":"x","idempotency_key":"k2","unknown":1}`, valid + " {}"} {
 		if out := send(body); out.Code != 400 {
 			t.Fatal(body, out.Code)
 		}

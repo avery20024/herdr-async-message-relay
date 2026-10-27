@@ -12,6 +12,9 @@ func TestTeamGuardUnknownIdentityDoesNotBypassObservedClaude(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			s, c := fixture(t)
 			m := claudeguard.Manager{Dir: filepath.Join(c.StateDir, "claude-guard")}
+			if err := m.ConfigureTeam(t.Context(), true); err != nil {
+				t.Fatal(err)
+			}
 			if err := m.Apply(t.Context(), "gm", "wC:p5", claudeguard.Event{Name: "SessionStart", Session: "s"}); err != nil {
 				t.Fatal(err)
 			}

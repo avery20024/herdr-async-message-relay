@@ -2,7 +2,6 @@ package queueui
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -73,7 +72,7 @@ func (m *Model) guardUpdate(msg guardMsg) {
 	}
 }
 func (m *Model) guardLines() []string {
-	label := m.text("Claude interception (team)")
+	label := m.text("Claude interception (global)")
 	value := m.text("Loading")
 	if !m.guardBusy {
 		value = m.text("Unavailable")
@@ -89,13 +88,11 @@ func (m *Model) guardLines() []string {
 	}
 	lines := []string{label + ": " + value}
 	if m.width >= 60 && m.height >= 18 {
-		counts := map[string]int{}
-		for _, o := range m.guardSettings.Observations {
-			counts[o.Status]++
-		}
-		lines = append(lines, m.text("Recording continues when off."))
-		lines = append(lines, fmt.Sprintf(m.text("Observed %d · pending %d · uninitialized %d · abnormal %d"), counts["observed"], counts["pending"], counts["uninitialized"], counts["unknown"]+counts["error"]+counts["ended"]))
-		lines = append(lines, m.text("Observed events are not a Hooks health guarantee."))
+		lines = append(lines, m.text("Question timing is recorded while off, ready to enable anytime."))
+		lines = append(lines, m.text("If delivery stalls, try turning interception off."))
+	}
+	if m.guardSettings.DiscoveryError != "" && m.width >= 60 && m.height >= 18 {
+		lines = append(lines, "! "+m.text("Seat discovery unavailable; observations may be incomplete."))
 	}
 	if m.guardError != "" {
 		if m.width < 40 || m.height < 18 {

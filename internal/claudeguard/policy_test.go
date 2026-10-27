@@ -7,21 +7,29 @@ import (
 	"testing"
 )
 
-func TestDefaultOnHooksRecordWithoutOptIn(t *testing.T) {
+func TestDefaultOffHooksRecordWithoutOptIn(t *testing.T) {
 	m := Manager{Dir: filepath.Join(t.TempDir(), "guards")}
 	p, err := m.TeamPolicy()
-	if err != nil || !p.Enabled {
+	if err != nil || p.Enabled {
 		t.Fatalf("default: %+v %v", p, err)
 	}
-	allowed(t, m, false)
-	apply(t, m, "SessionStart", "")
-	allowed(t, m, true)
-	apply(t, m, "PreToolUse", "q1")
-	allowed(t, m, false)
-	apply(t, m, "PostToolUse", "q1")
-	allowed(t, m, true)
+	for _, name := range []string{"SessionStart", "PreToolUse", "PostToolUse"} {
+		apply(t, m, name, "q1")
+		release, enabled, err := m.Acquire(t.Context(), "gm", "wC:p5", "session-1")
+		if err != nil || enabled || release == nil {
+			t.Fatalf("off still blocked: %v %v", enabled, err)
+		}
+		release()
+	}
+	observation := m.Observation(t.Context(), "gm")
+	if observation.Status != "observed" {
+		t.Fatal(observation)
+	}
 	if _, err := os.Stat(filepath.Join(m.Dir, "gm", "events.jsonl")); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(m.Dir, "team-policy.json")); !os.IsNotExist(err) {
+		t.Fatalf("default read must not create policy: %v", err)
 	}
 }
 func TestInvalidTeamPolicyFailsClosedButRecordingContinues(t *testing.T) {
