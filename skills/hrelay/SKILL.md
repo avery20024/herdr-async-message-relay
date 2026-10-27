@@ -11,7 +11,7 @@ Use the installed **native `hrelay` command**. A project-specific forwarding scr
 
 Your launch environment must supply:
 
-- `DELIVER_ROOT`: absolute relay root. In v0.7.0 discovery, actual agent `foreground_cwd` directories must resolve strictly inside it; their basenames are the role names, with no fixed container directory. Published v0.6.0 still uses its old routing.
+- `DELIVER_ROOT`: absolute relay root. In discovery, actual agent `foreground_cwd` directories must resolve strictly inside it; their basenames are the role names, with no fixed container directory. v0.6.0 and earlier still use the old routing.
 - `HERDR_RELAY_FROM`: your actual stable sender role, supplied by the team launcher. Alternatively pass an explicitly authorized `--from ROLE`.
 - `HERDR_SOCKET_PATH`: Herdr's absolute socket path for first service registration, normally inherited inside a Herdr pane.
 - Any custom `DELIVER_STATE_DIR` / `HERDR_RELAY_SERVICE_HOME` consistently across the caller and startup hook.
