@@ -106,7 +106,7 @@ There are two ways to tell hrelay the root: set the `DELIVER_ROOT` variable, or 
 
 - AI teams: the launcher sets `DELIVER_ROOT` and `HERDR_RELAY_FROM` in each seat's environment, so seats stay in their own directories and still reach the team relay. With `DELIVER_ROOT` set, `hrelay ui` and `hrelay send` work from any directory.
 - Individual projects: run `hrelay init` once in the project root. It creates the marker and prints `export` lines for the environment; afterwards `hrelay server on`, `hrelay ui` and `hrelay send` work from any directory below that root without extra settings.
-- Verification: `hrelay status` prints `project_root`; confirm it is the directory you expect before sending.
+- Verification: `hrelay status` prints `project_root`; confirm it is the directory you expect before sending. `hrelay ps` lists every instance on the machine; `hrelay stop|start|rm ID` manage them (see [instance management](docs/cli-reference.md#manage-instances-by-id)).
 
 The `.hrelay` marker contains only a schema version, never a path, so copying it elsewhere does not point at the original root. Only a regular file with that name counts; directories and symlinks are ignored, and directory names are never used to guess a root.
 

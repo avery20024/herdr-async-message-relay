@@ -107,6 +107,22 @@ hrelay service list       # 此 Herdr 環境已登記的專案
 hrelay service restore    # 僅恢復允許自動啟動的登記
 ```
 
+### 以 ID 管理實例
+
+`hrelay ps` 列出本機所有已登記實例，不受目前根目錄或 Herdr 環境影響。ID 是根目錄與狀態目錄雜湊的前 12 碼；STATUS 為 `running`、`stopped`（已暫停）或 `down`（應運行但無法連線）。腳本可加 `--json`。
+
+```sh
+hrelay ps
+hrelay stop 3f9a1c        # 暫停；保留登記與佇列
+hrelay start 3f9a1c       # 依已儲存設定恢復
+hrelay rm 3f9a1c          # 停止並移除服務單元與登記；保留佇列
+hrelay rm --purge --confirm 3f9a1c   # 另刪除佇列資料庫、socket 與鎖檔
+```
+
+ID 可縮短至至少 4 個字元，有歧義時拒絕。只會停止或移除由本插件管理的實例；運行中且非本插件管理的 relay 會被拒絕。一個根目錄只有一個實例：以不同 `DELIVER_STATE_DIR` 重複登記同一根目錄會被拒絕，並指出既有 ID。
+
+**與 Herdr 的生命週期：**受管理的 relay 會監看登記時的 Herdr socket。socket 連續消失約 30 秒後，relay 正常退出，服務管理器不會重啟它（launchd `SuccessfulExit=false`、systemd `Restart=on-failure`）；當機仍會重啟。Herdr 啟動 hook 會執行 `service restore`，重新啟動已登記且未暫停的實例。relay 停止期間，訊息保留在佇列中。舊版登記的單元會在下次啟動該實例時套用此策略。
+
 `server on` 是 `service start` 的易用別名，可啟動未運行服務或明確恢復暫停，不會重啟健康 daemon。`server off` 對應 `service stop`，`server status` 對應 `service status`。這些指令作用於明確設定的**專案**，不影響帳號下所有專案，也不需要發送角色或訊息內容。
 
 `server restart`（亦可用 `service restart`）在同一生命週期鎖內完成停止、關閉確認及啟動；須同時確認 listener 消失與 daemon 檔案鎖釋放。關閉失敗會保持暫停，不啟動替代程序。尚未登記且無運行服務的專案也可用 restart 初始化，但不會強制停止 unmanaged 舊 listener。若有中斷的投遞，請依不確定性規則查核，不盲目重送。
