@@ -24,6 +24,7 @@ type AgentSession struct {
 }
 
 type Agent struct {
+	Name          string       `json:"name"`
 	Session       AgentSession `json:"agent_session"`
 	CWD           string       `json:"cwd"`
 	ForegroundCWD string       `json:"foreground_cwd"`
@@ -118,6 +119,33 @@ var panePattern = regexp.MustCompile(`^w[0-9A-Za-z]+:p[0-9A-Za-z]+$`)
 
 // RoleFromDirectory 僅依既存前景目錄的實體路徑與 root 邊界判斷，不退回 shell cwd。
 func RoleFromDirectory(root, foreground string) (string, error) {
+	name, err := directoryName(root, foreground)
+	if err != nil {
+		return "", err
+	}
+	if !roles.ValidName(name) {
+		return "", errors.New("foreground_cwd must name a valid role directory")
+	}
+	return name, nil
+}
+
+// RoleFromAgent 以 herdr agent rename 設定的名稱為角色；沒有有效名稱時才用前景目錄名稱。
+// 兩種情況都要求前景目錄嚴格位於 root 內，名稱不能把其他專案的座位拉進本 relay。
+func RoleFromAgent(root string, a Agent) (string, error) {
+	dir, err := directoryName(root, a.ForegroundCWD)
+	if err != nil {
+		return "", err
+	}
+	if roles.ValidName(a.Name) {
+		return a.Name, nil
+	}
+	if !roles.ValidName(dir) {
+		return "", errors.New("foreground_cwd must name a valid role directory")
+	}
+	return dir, nil
+}
+
+func directoryName(root, foreground string) (string, error) {
 	if !filepath.IsAbs(root) || !filepath.IsAbs(foreground) {
 		return "", errors.New("root and foreground_cwd must be absolute paths")
 	}
@@ -137,18 +165,17 @@ func RoleFromDirectory(root, foreground string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name := filepath.Base(path)
-	if !info.IsDir() || !roles.ValidName(name) {
+	if !info.IsDir() {
 		return "", errors.New("foreground_cwd must name a valid role directory")
 	}
-	return name, nil
+	return filepath.Base(path), nil
 }
 
 // DiscoverRoles 保留同名座位，讓後續解析明確拒絕衝突，不按 cwd 或狀態任選一席。
 func DiscoverRoles(root string, agents []Agent) map[string][]Agent {
 	found := map[string][]Agent{}
 	for _, a := range agents {
-		if name, err := RoleFromDirectory(root, a.ForegroundCWD); err == nil {
+		if name, err := RoleFromAgent(root, a); err == nil {
 			found[name] = append(found[name], a)
 		}
 	}
