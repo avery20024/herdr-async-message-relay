@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/avery20024/herdr-async-message-relay/internal/deliver"
 	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 )
 
@@ -38,8 +39,14 @@ func systemdQuote(value string, command bool) string {
 }
 
 func (m *Manager) render(r Record) (string, []byte, error) {
-	values := []string{r.Binary, r.Config.Root}
+	// Herdr 結束後 daemon 自行正常退出；此旗標只在受管理服務啟用，且以正常退出不重啟配合。
+	environment := make(map[string]string, len(r.Environment)+1)
 	for name, value := range r.Environment {
+		environment[name] = value
+	}
+	environment[deliver.ExitWhenHerdrGoneEnv] = "1"
+	values := []string{r.Binary, r.Config.Root}
+	for name, value := range environment {
 		values = append(values, name, value)
 	}
 	for _, value := range values {
@@ -47,8 +54,8 @@ func (m *Manager) render(r Record) (string, []byte, error) {
 			return "", nil, i18n.NewError("service paths and environment must not contain control characters")
 		}
 	}
-	names := make([]string, 0, len(r.Environment))
-	for name := range r.Environment {
+	names := make([]string, 0, len(environment))
+	for name := range environment {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -62,9 +69,9 @@ func (m *Manager) render(r Record) (string, []byte, error) {
 		}
 		out.WriteString("</array>\n<key>EnvironmentVariables</key><dict>\n")
 		for _, name := range names {
-			fmt.Fprintf(&out, "<key>%s</key><string>%s</string>\n", xmlText(name), xmlText(r.Environment[name]))
+			fmt.Fprintf(&out, "<key>%s</key><string>%s</string>\n", xmlText(name), xmlText(environment[name]))
 		}
-		out.WriteString("</dict>\n<key>RunAtLoad</key><true/>\n<key>KeepAlive</key><true/>\n<key>ThrottleInterval</key><integer>5</integer>\n")
+		out.WriteString("</dict>\n<key>RunAtLoad</key><true/>\n<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>\n<key>ThrottleInterval</key><integer>5</integer>\n")
 		for _, name := range []string{"StandardOutPath", "StandardErrorPath"} {
 			fmt.Fprintf(&out, "<key>%s</key><string>%s</string>\n", name, xmlText(filepath.Join(m.dir(r.Config), "service.log")))
 		}
@@ -84,9 +91,9 @@ func (m *Manager) render(r Record) (string, []byte, error) {
 	}
 	out.WriteByte('\n')
 	for _, name := range names {
-		fmt.Fprintf(&out, "Environment=%s\n", systemdQuote(name+"="+r.Environment[name], false))
+		fmt.Fprintf(&out, "Environment=%s\n", systemdQuote(name+"="+environment[name], false))
 	}
-	out.WriteString("Restart=always\nRestartSec=5\nUMask=0077\n\n[Install]\nWantedBy=default.target\n")
+	out.WriteString("Restart=on-failure\nRestartSec=5\nUMask=0077\n\n[Install]\nWantedBy=default.target\n")
 	config := r.Environment["XDG_CONFIG_HOME"]
 	if config == "" {
 		config = filepath.Join(m.Home, ".config")

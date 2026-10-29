@@ -102,7 +102,7 @@ func run(ctx context.Context, args []string) (err error) {
 		return err
 	}
 	if global.NArg() < 1 {
-		return i18n.NewError("usage: hrelay [--lang auto|en|zh-TW] [--root PATH] help|version|init|cli|server|service|serve|send|status|show|resolve")
+		return i18n.NewError("usage: hrelay [--lang auto|en|zh-TW] [--root PATH] help|version|init|ps|stop|start|rm|cli|server|service|serve|send|status|show|resolve")
 	}
 	if handled, helpErr := dispatchHelp(global.Args(), language); handled {
 		return helpErr
@@ -113,6 +113,10 @@ func run(ctx context.Context, args []string) (err error) {
 	}
 	if global.Arg(0) == "cli" {
 		return runCLIInstall(ctx, global.Args()[1:])
+	}
+	switch global.Arg(0) {
+	case "ps", "stop", "start", "rm":
+		return runInstances(ctx, global.Arg(0), global.Args()[1:])
 	}
 	if global.Arg(0) == "init" {
 		return runInit(global.Args()[1:])
@@ -148,7 +152,17 @@ func run(ctx context.Context, args []string) (err error) {
 		if len(rest) != 0 {
 			return i18n.NewError("serve takes no arguments")
 		}
-		return deliver.Serve(ctx, c, slog.Default())
+		serveCtx := ctx
+		if socket := os.Getenv("HERDR_SOCKET_PATH"); os.Getenv(deliver.ExitWhenHerdrGoneEnv) == "1" && filepath.IsAbs(socket) {
+			var stop context.CancelFunc
+			serveCtx, stop = context.WithCancel(ctx)
+			defer stop()
+			go deliver.WatchHerdr(serveCtx, socket, 5*time.Second, 6, func() {
+				slog.Default().Info("Herdr socket is gone; stopping relay", "socket", socket)
+				stop()
+			})
+		}
+		return deliver.Serve(serveCtx, c, slog.Default())
 	case "send":
 		from := f.String("from", os.Getenv("HERDR_RELAY_FROM"), "sender role; defaults to HERDR_RELAY_FROM")
 		to := f.String("to", "", "recipient role")

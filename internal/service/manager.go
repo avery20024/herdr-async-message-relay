@@ -32,6 +32,8 @@ type Record struct {
 }
 
 type Status struct {
+	ID        string `json:"id,omitempty"`
+	Error     string `json:"error,omitempty"`
 	Root      string `json:"project_root"`
 	StateDir  string `json:"state_dir"`
 	AutoStart bool   `json:"auto_start"`
@@ -299,6 +301,13 @@ func (m *Manager) ensureLocked(ctx context.Context, c deliver.Config, resume boo
 	}
 	r, err := m.load(c)
 	if errors.Is(err, os.ErrNotExist) {
+		other, e := m.sameRootOther(c)
+		if e != nil {
+			return e
+		}
+		if other != nil {
+			return i18n.Errorf("this root is already registered with state directory %s (id %s); use it, or run hrelay rm %s first", other.Config.StateDir, m.ID(other.Config), m.ID(other.Config))
+		}
 		r, err = m.newRecord(c)
 	}
 	if err != nil {
@@ -411,7 +420,7 @@ func (m *Manager) Status(ctx context.Context, c deliver.Config) (Status, error) 
 		return Status{}, err
 	}
 	ready, err := m.probe(ctx, c)
-	return Status{Root: c.Root, StateDir: c.StateDir, AutoStart: r.AutoStart, Managed: r.Managed, Ready: ready}, err
+	return Status{ID: m.ID(c), Root: c.Root, StateDir: c.StateDir, AutoStart: r.AutoStart, Managed: r.Managed, Ready: ready}, err
 }
 
 func (m *Manager) records() ([]Record, error) {

@@ -106,7 +106,7 @@ wsl --install -d Ubuntu
 
 - AI 團隊：由啟動器在各座位環境設定 `DELIVER_ROOT` 與 `HERDR_RELAY_FROM`，座位可留在各自目錄，仍能連到團隊 relay。已設定 `DELIVER_ROOT` 時，`hrelay ui` 與 `hrelay send` 可在任何目錄執行。
 - 個人專案：在專案根目錄執行一次 `hrelay init`，它會建立標記檔並印出環境變數的 `export` 範例；之後在該根目錄之下任何目錄執行 `hrelay server on`、`hrelay ui`、`hrelay send` 都不必再額外設定。
-- 核對：`hrelay status` 會印出 `project_root`；發送前先確認它是預期的目錄。
+- 核對：`hrelay status` 會印出 `project_root`；發送前先確認它是預期的目錄。`hrelay ps` 列出本機所有實例，`hrelay stop|start|rm ID` 管理它們（見[實例管理](docs/cli-reference.zh-TW.md#以-id-管理實例)）。
 
 `.hrelay` 標記檔只記錄格式版本、不記路徑，複製到他處不會指向原根目錄。只有同名的一般檔案有效，目錄與符號連結皆忽略，也不以目錄名稱推測根目錄。
 

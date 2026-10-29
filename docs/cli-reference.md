@@ -107,6 +107,22 @@ hrelay service list       # Registered projects for this Herdr context
 hrelay service restore    # Restore enabled registrations only
 ```
 
+### Manage instances by ID
+
+`hrelay ps` lists every registered instance on this machine, whatever the current root or Herdr context. The ID is the first 12 characters of a hash of the root and state directory; STATUS is `running`, `stopped` (paused) or `down` (expected up but unreachable). Add `--json` for scripts.
+
+```sh
+hrelay ps
+hrelay stop 3f9a1c        # pause; registration and queue are kept
+hrelay start 3f9a1c       # resume from the saved settings
+hrelay rm 3f9a1c          # stop, remove the service unit and registration; queue is kept
+hrelay rm --purge --confirm 3f9a1c   # also delete queue database, socket and lock files
+```
+
+IDs may be shortened to at least 4 characters; ambiguous prefixes are refused. Only instances managed by this plugin are stopped or removed; a running unmanaged relay is refused. One root has one instance: registering the same root with a different `DELIVER_STATE_DIR` is refused and names the existing ID.
+
+**Lifecycle with Herdr.** A managed relay watches the Herdr socket it was registered with. When the socket is gone for about 30 seconds in a row, the relay exits normally and the service manager does not restart it (launchd `SuccessfulExit=false`, systemd `Restart=on-failure`); a crash still restarts. The Herdr startup hook runs `service restore`, which starts registered, unpaused instances again. Queued messages stay in the queue while the relay is down. Units registered by earlier versions pick up this policy the next time the instance is started.
+
 `server on` is the friendly alias for `service start`; it starts an inactive relay or explicitly resumes a paused project, and does not restart a healthy daemon. `server off` aliases `service stop`, while `server status` aliases `service status`. These commands affect the explicitly configured **project**, not every project on the account. They do not need a sender role or a message body.
 
 `server restart` (also `service restart`) holds one lifecycle lock across stop, shutdown confirmation, and start. It waits for both the listener to disappear and the daemon's file lock to be released; failed shutdown leaves the project paused and no replacement is started. A never-registered inactive project can be started by restart too, but an unmanaged legacy listener is never forcibly terminated. Inspect any interrupted dispatch uncertainty rather than blindly retrying messages.

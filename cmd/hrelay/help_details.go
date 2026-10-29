@@ -83,6 +83,46 @@ func buildCommandHelpTopics() map[string]commandHelp {
 			},
 			examples: []string{"hrelay init /absolute/team"},
 		},
+		"ps": {
+			syntax:  "ps [--json]",
+			options: []helpOption{{"json", "", "print machine-readable JSON"}},
+			notes: []string{
+				"Lists all registered instances on this machine, whatever the current root or Herdr context.",
+				"ID is the first 12 characters of a hash of the root and state directory; STATUS is running, stopped (paused) or down (expected up but unreachable).",
+				"Read-only: does not start, stop or register anything.",
+			},
+			examples: []string{"hrelay ps"},
+		},
+		"stop": {
+			syntax: "stop ID",
+			notes: []string{
+				"ID may be a prefix of at least 4 characters from hrelay ps; ambiguous prefixes are refused.",
+				"Persists a pause and stops the managed service; the registration and queue data are kept.",
+				"Instances not managed by this plugin are never stopped.",
+			},
+			examples: []string{"hrelay stop 3f9a1c"},
+		},
+		"start": {
+			syntax: "start ID",
+			notes: []string{
+				"Resumes a registered, paused or stopped instance from its saved settings.",
+				"A healthy running relay is not restarted.",
+			},
+			examples: []string{"hrelay start 3f9a1c"},
+		},
+		"rm": {
+			syntax: "rm [--purge --confirm] ID",
+			options: []helpOption{
+				{"purge", "", "also delete the queue database files of this instance"},
+				{"confirm", "", "explicitly confirm --purge"},
+			},
+			notes: []string{
+				"Stops the managed service, removes its launchd/systemd unit and the registration.",
+				"The queue data is kept by default so messages are not lost; --purge --confirm deletes only the queue database, socket and lock files.",
+				"A running relay that this plugin does not manage is refused.",
+			},
+			examples: []string{"hrelay rm 3f9a1c", "hrelay rm --purge --confirm 3f9a1c"},
+		},
 		"ui": {
 			syntax: "ui",
 			notes: []string{
