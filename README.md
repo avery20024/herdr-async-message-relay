@@ -122,6 +122,14 @@ hrelay send gm 'Task 123 is ready. Please inspect the evidence.'
 
 **Role discovery:** the worker starts with `herdr agent list`, resolves each agent's absolute `foreground_cwd` through symlinks, and uses its basename as the role only when the resulting directory is strictly inside this relay's root. Any intermediate directory names/languages are allowed, such as `agents/reviewer` or `開発/担当A`. There is no `cwd` fallback or role-directory ranking. Missing/invalid foreground paths and ambiguous roles are not delivered. A valid role name can be queued while its seat is offline; names start with a Unicode letter, followed by Unicode letters/marks/digits, `_` or `-`, up to 64 UTF-8 bytes. Keep the foreground directory stable: entering a child directory changes the derived role. Any same-named directory at any depth participates: duplicate seats keep messages queued; if only another same-named seat remains, it can receive that role's messages. Use a trusted root and avoid unrelated same-named seats. Names are exact, without Unicode normalization or confusable detection. This routing is not available in v0.6.0 and earlier, and does not initialize Claude question observations. Setup and SOP integration: [agent guide](docs/agent-usage.md), optional [skill](skills/hrelay/SKILL.md), and [CLI reference](docs/cli-reference.md).
 
+**Named seats (Worktrees and temporary seats):** a seat whose directory name is not the role you want to address, such as a task Worktree `frontend-api-789`, can take its role from the Herdr agent name. Start the agent inside the root, then name the pane:
+
+```sh
+herdr agent rename <pane-id> tmp-fix   # role becomes tmp-fix; clear with --clear
+```
+
+A valid agent name replaces the directory-based role for that seat (the directory name no longer answers); an invalid or empty name falls back to the directory. The foreground directory must still be inside the relay root, so a name cannot pull a seat from another project. Two seats claiming the same role stay ambiguous and messages remain queued. Because any valid name takes effect, do not rename fixed seats for cosmetic reasons.
+
 **Acceptance is not a read receipt.** `accepted: true` means stored, not delivered, read or approved. Preserve the returned message ID / idempotency key, and never blindly resend with a new key. If a submission cannot be observed, the worker retries the same messages in FIFO order after a short backoff, up to `DELIVER_MAX_ATTEMPTS`; delivery is therefore **at least once**, and the envelope keeps each message ID so the receiver can recognise a repeat. See [recovery and delivery semantics](docs/cli-reference.md#recovery-and-delivery-semantics).
 
 ## UI themes

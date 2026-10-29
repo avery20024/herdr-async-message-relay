@@ -165,7 +165,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 				"DELIVER_STATE_DIR overrides the state directory; otherwise use XDG_STATE_HOME or ~/.local/state plus the project hash.",
 				"DELIVER_BATCH_SIZE defaults to 3 (1..100); DELIVER_BATCH_BYTES to 12000 (2048..64000); DELIVER_POLL_MS to 500 (50..60000).",
 				"DELIVER_RETRY_BACKOFF_MS defaults to 30000 (0..600000); DELIVER_MAX_ATTEMPTS to 3 (1..10); delivery is at least once.",
-				"Seats come from herdr agent list: a unique foreground_cwd basename strictly inside this root; no fixed directory layout or cwd fallback.",
+				"Seats come from herdr agent list: a unique role strictly inside this root, taken from the agent name set by herdr agent rename, otherwise the foreground_cwd basename; no fixed directory layout or cwd fallback.",
 				"HERDR_BIN_PATH defaults to herdr; delivery requires the correct inherited Herdr socket context.",
 			},
 			examples: []string{"hrelay --root /absolute/team serve"},

@@ -122,6 +122,14 @@ hrelay send gm 'Task 123 已備妥，請查核證據。'
 
 **角色探索：**worker 先取得 `herdr agent list`，解析每個 AI 的絕對 `foreground_cwd` 與符號連結，實體目錄必須嚴格位於本 relay root 內，再取 basename 作角色名；中間目錄名稱與語言不限，例如 `agents/reviewer` 或 `開発/担当A`。不退回 `cwd` 或按舊角色目錄排名；路徑缺失、無效或同名衝突時不投遞。有效名稱可在座位離線時先入列，名稱以 Unicode 字母開頭，後續允許字母、組合符號、數字、底線與連字號，最多 64 UTF-8 bytes。請保持前景目錄穩定：進入子目錄會改變推導的角色。任意深度的同名目錄都參與定址；重名座位會使訊息維持 queued，若只剩另一個同名座位，它可接收該角色訊息。請使用可信任 root、避免無關同名座位。名稱精確比對，未做 Unicode 正規化或同形字辨識。此路由不適用於 v0.6.0 及更早版本，也不會自動初始化 Claude 問答觀測。設定與 SOP 整合見 [agent 文件（英文）](docs/agent-usage.md)、可選 [skill（英文）](skills/hrelay/SKILL.md) 及 [CLI 參考](docs/cli-reference.zh-TW.md)。
 
+**具名座位（Worktree 與臨時座位）：**目錄名稱不是想收信的角色名時（例如任務 Worktree `frontend-api-789`），可改由 Herdr agent 名稱決定角色。先在根目錄內啟動 agent，再為該 pane 命名：
+
+```sh
+herdr agent rename <pane-id> tmp-fix   # 角色變為 tmp-fix；以 --clear 清除
+```
+
+有效的 agent 名稱會取代該座位依目錄得到的角色（目錄名稱不再收信）；名稱無效或為空則退回目錄名稱。前景目錄仍須位於 relay 根目錄內，名稱不能把其他專案的座位拉進來。兩個座位宣稱同一角色時維持歧義，訊息留在佇列。因為任何有效名稱都會生效，固定座位請勿為了美觀而改名。
+
 **入列成功不等於已讀。** `accepted: true` 代表已儲存，不是已投遞、已讀或已核准。保留 message ID／冪等 key，不要換新 key 盲目重送。若提交結果無法觀測，worker 會在短暫退避後依 FIFO 重送同一批訊息，最多 `DELIVER_MAX_ATTEMPTS` 次，因此投遞語意為 **at-least-once**；信封保留每則 message ID 供接收端辨識重複，詳見 [復原與投遞語意](docs/cli-reference.zh-TW.md#復原與投遞語意)。
 
 ## UI 主題
