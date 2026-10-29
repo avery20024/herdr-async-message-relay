@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -101,7 +102,7 @@ func run(ctx context.Context, args []string) (err error) {
 		return err
 	}
 	if global.NArg() < 1 {
-		return i18n.NewError("usage: hrelay [--lang auto|en|zh-TW] [--root PATH] help|version|cli|server|service|serve|send|status|show|resolve")
+		return i18n.NewError("usage: hrelay [--lang auto|en|zh-TW] [--root PATH] help|version|init|cli|server|service|serve|send|status|show|resolve")
 	}
 	if handled, helpErr := dispatchHelp(global.Args(), language); handled {
 		return helpErr
@@ -112,6 +113,9 @@ func run(ctx context.Context, args []string) (err error) {
 	}
 	if global.Arg(0) == "cli" {
 		return runCLIInstall(ctx, global.Args()[1:])
+	}
+	if global.Arg(0) == "init" {
+		return runInit(global.Args()[1:])
 	}
 	if global.Arg(0) == "server" {
 		return runServer(ctx, *root, global.Args()[1:])
@@ -238,4 +242,26 @@ func main() {
 		}
 		os.Exit(1)
 	}
+}
+
+// runInit 在指定目錄（預設當前目錄）建立根目錄標記檔，不載入設定也不碰佇列或服務。
+func runInit(args []string) error {
+	if len(args) > 1 {
+		return i18n.NewError("usage: hrelay init [PATH]")
+	}
+	dir := "."
+	if len(args) == 1 {
+		dir = args[0]
+	}
+	root, created, err := deliver.InitRoot(dir)
+	if err != nil {
+		return err
+	}
+	if created {
+		fmt.Fprintf(os.Stdout, "created %s\n", filepath.Join(root, deliver.RootMarker))
+	} else {
+		fmt.Fprintf(os.Stdout, "already initialized: %s\n", filepath.Join(root, deliver.RootMarker))
+	}
+	fmt.Fprintf(os.Stdout, "export DELIVER_ROOT=%q\nexport HERDR_RELAY_FROM=ROLE\n", root)
+	return nil
 }

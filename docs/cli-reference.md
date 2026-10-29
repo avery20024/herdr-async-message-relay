@@ -71,7 +71,7 @@ Detailed topics cover every command and the `server`, `service`, and `cli` subco
 
 Help recognition follows the normal flag parser: options precede positional arguments; `--help` used as a string option value or as message data is not intercepted. Global `--lang` / `--root` must still precede the command. For example, `send --to gm --body '--help'` remains a send request, not a help request. The short send form defaults `--ensure` to true; the `--to`/`--body` form defaults it to false. Detailed help documents this difference without starting a service.
 
-It lists messaging, inspection, service controls, CLI installation, Herdr plugin actions, context settings, and safety reminders. `help` writes to stdout; root-level `--help` writes to stderr and also lists global flags. Neither requires a valid project, a running relay, or a Herdr socket, and neither starts services or creates a queue. Put global `--root` / `--lang` before the subcommand. The root is selected by `--root` → `DELIVER_ROOT` → current directory; hrelay does not search parent directories.
+It lists messaging, inspection, service controls, CLI installation, Herdr plugin actions, context settings, and safety reminders. `help` writes to stdout; root-level `--help` writes to stderr and also lists global flags. Neither requires a valid project, a running relay, or a Herdr socket, and neither starts services or creates a queue. Put global `--root` / `--lang` before the subcommand. The root is selected by `--root` → `DELIVER_ROOT` → the nearest parent directory containing a `.hrelay` marker (`hrelay init [PATH]` creates it); there is no fallback to the current directory, and an unresolved root is an error.
 
 ## Run
 
@@ -262,7 +262,7 @@ Foreground settings are read at startup. Managed services snapshot settings at r
 | `DELIVER_POLL_MS` | `500` | Scan interval in milliseconds, 50–60000 |
 | `DELIVER_RETRY_BACKOFF_MS` | `30000` | Wait before retrying an `uncertain` batch, 0–600000 |
 | `DELIVER_MAX_ATTEMPTS` | `3` | Maximum deliveries per message before it is held for inspection, 1–10 |
-| `DELIVER_ROOT` | Working directory | Team root; configure explicitly for agents; `--root` overrides it |
+| `DELIVER_ROOT` | Nearest parent with `.hrelay` | Team root; configure explicitly for agents; `--root` overrides it |
 | `HERDR_RELAY_FROM` | None | Actual sender role supplied by the team launcher; `--from` overrides it |
 | `HERDR_RELAY_LANG` | `auto` | Native CLI display language: `auto`, `en`, `zh-TW`; global `--lang` overrides it; not saved in service records |
 | `HERDR_RELAY_BIN_DIR` | `$HOME/.local/bin` | Stable CLI installation directory; absolute path; not a project/service setting |

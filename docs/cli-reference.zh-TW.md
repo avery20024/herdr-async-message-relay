@@ -71,7 +71,7 @@ hrelay cli install --help
 
 help 辨識遵循一般旗標解析規則：選項放在位置參數前；作為字串選項值或訊息資料的 `--help` 不會被攔截。全域 `--lang`／`--root` 仍須放在主指令前。例如 `send --to gm --body '--help'` 仍是送信操作，不是查閱說明。短送信語法的 `--ensure` 預設 true，`--to`／`--body` 語法則預設 false；詳細說明會呈現此差異，但不會啟動服務。
 
-內容涵蓋送信、查詢、服務管理、CLI 安裝、Herdr 插件 actions、環境設定與安全提醒。`help` 輸出至 stdout；根層 `--help` 輸出至 stderr 並列出全域選項。兩者不要求有效專案、執行中的 relay 或 Herdr socket，也不啟動服務或建立佇列。全域 `--root`／`--lang` 放在子指令前；根目錄依 `--root` → `DELIVER_ROOT` → 當前目錄選擇，不會向上搜尋。
+內容涵蓋送信、查詢、服務管理、CLI 安裝、Herdr 插件 actions、環境設定與安全提醒。`help` 輸出至 stdout；根層 `--help` 輸出至 stderr 並列出全域選項。兩者不要求有效專案、執行中的 relay 或 Herdr socket，也不啟動服務或建立佇列。全域 `--root`／`--lang` 放在子指令前；根目錄依 `--root` → `DELIVER_ROOT` → 向上最近含 `.hrelay` 標記檔的目錄選擇（`hrelay init [PATH]` 建立標記檔）；不會退回當前目錄，無法解析時直接報錯。
 
 ## 執行
 
@@ -262,7 +262,7 @@ hrelay --root "$TEAM" send --from dev --key task-123-report-v1 gm '完整報告�
 | `DELIVER_POLL_MS` | `500` | 掃描間隔，單位 ms，50–60000 |
 | `DELIVER_RETRY_BACKOFF_MS` | `30000` | `uncertain` 批次重試前的退避時間，0–600000 |
 | `DELIVER_MAX_ATTEMPTS` | `3` | 單則訊息最多投遞次數，超過即保留待人工查核，1–10 |
-| `DELIVER_ROOT` | 當前工作目錄 | 團隊根目錄；agent 應明確設定，`--root` 優先 |
+| `DELIVER_ROOT` | 向上最近含 `.hrelay` 的目錄 | 團隊根目錄；agent 應明確設定，`--root` 優先 |
 | `HERDR_RELAY_FROM` | 無 | launcher 提供的實際發送角色，`--from` 優先 |
 | `HERDR_RELAY_LANG` | `auto` | 原生 CLI 提示語系：`auto`、`en`、`zh-TW`；全域 `--lang` 優先，不寫入服務紀錄 |
 | `HERDR_RELAY_BIN_DIR` | `$HOME/.local/bin` | 原生 CLI 安裝絕對目錄，不是專案／服務設定 |

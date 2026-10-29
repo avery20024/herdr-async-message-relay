@@ -37,7 +37,7 @@ hrelay --root "$TEAM" server on
 hrelay --root "$TEAM" ui
 ```
 
-For a configured environment with `DELIVER_ROOT`, just run `hrelay ui`. The UI does not start or upgrade workers, send messages or resolve uncertain batches. **Defaults:** the UI starts with one-second auto refresh, and missing Claude interception policy defaults **off**, preserving explicit saved policies. Ctrl+P uses a global label scoped to this relay root and two muted hints; `?` groups shortcuts into Browsing, Filters, Settings, and Other. Scoped Hooks keep recording question times when interception is off. Restart the worker on the matching version to use the current routing and missing-policy default; publishing or updating the CLI/UI does not replace a running worker. Earlier releases (for example v0.6.0) default missing policy to on; existing explicit on/off settings remain unchanged on upgrade. When interception is enabled, uninitialized Claude roles still defer notifications. See [setup, migration and limitations](docs/claude-question-guard.md). CLI and worker must both be v0.5.0-compatible; a plugin update does not replace an already-running worker.
+For a configured environment with `DELIVER_ROOT`, just run `hrelay ui` from any directory; see [Team root and instances](#team-root-and-instances). The UI does not start or upgrade workers, send messages or resolve uncertain batches. **Defaults:** the UI starts with one-second auto refresh, and missing Claude interception policy defaults **off**, preserving explicit saved policies. Ctrl+P uses a global label scoped to this relay root and two muted hints; `?` groups shortcuts into Browsing, Filters, Settings, and Other. Scoped Hooks keep recording question times when interception is off. Restart the worker on the matching version to use the current routing and missing-policy default; publishing or updating the CLI/UI does not replace a running worker. Earlier releases (for example v0.6.0) default missing policy to on; existing explicit on/off settings remain unchanged on upgrade. When interception is enabled, uninitialized Claude roles still defer notifications. See [setup, migration and limitations](docs/claude-question-guard.md). CLI and worker must both be v0.5.0-compatible; a plugin update does not replace an already-running worker.
 
 Per-release changes, routing risks and upgrade cautions are in [docs/releases](docs/releases/). v0.6.0 added pointer-targeted wheel scrolling, pinned muted metadata notices, accented values, and `gg` / `G` jumps to the first / last currently loaded message. See [v0.6.0 changes and upgrade cautions](docs/releases/v0.6.0.md) and [UI controls and preferences](docs/ui.md). For scripts, JSON inspection, first-time service setup, CLI language flags or recovery, see the [CLI operations and advanced reference](docs/cli-reference.md).
 
@@ -86,6 +86,29 @@ Restart if requested and finish Ubuntu's first-run account setup, then run the *
 - Pin or roll back with `herdr plugin install avery20024/herdr-async-message-relay --ref <tag>`. Normal installs can omit `--ref`; updates follow the ref recorded at installation.
 - Download a platform archive from [Releases](https://github.com/avery20024/herdr-async-message-relay/releases), verify `checksums.txt` and extract it. Keep the included license and third-party notices.
 - For checkout installation, PATH repair, upgrade behavior and checksum boundaries, see [installation details](docs/cli-reference.md#installation-details).
+
+## Team root and instances
+
+One team root is one relay instance. The root decides which queue, socket and background service a command talks to, so every command, including `hrelay ui`, must resolve to the same root as the worker.
+
+There are two ways to tell hrelay the root: set the `DELIVER_ROOT` variable, or place a `.hrelay` marker file in the root so commands run anywhere below it are intercepted from the outside. The variable always wins over the marker.
+
+**How the root is chosen** (first match wins):
+
+1. `--root PATH` (explicit command-line override)
+2. `DELIVER_ROOT` (variable; takes priority over the marker)
+3. the nearest parent directory, starting at the current one, that contains a `.hrelay` marker created by `hrelay init`
+4. otherwise an error; hrelay never uses the current directory by itself
+
+**From root to instance.** The root is made absolute and symlinks are resolved. The state directory is `$XDG_STATE_HOME/herdr-deliver/<first 16 hex digits of sha256(root)>` (`~/.local/state` when unset) and holds the queue and `deliver.sock`; `DELIVER_STATE_DIR` overrides it. The managed launchd/systemd service is identified by a hash of the root and state directory. Different roots therefore have separate queues, sockets and services, so several projects can run side by side on one machine, while two paths that resolve to the same directory share one instance. Reaching the same project through a different root, such as a role subdirectory, selects a different and empty instance, and role discovery will not find the seats.
+
+**Typical setups**
+
+- AI teams: the launcher sets `DELIVER_ROOT` and `HERDR_RELAY_FROM` in each seat's environment, so seats stay in their own directories and still reach the team relay. With `DELIVER_ROOT` set, `hrelay ui` and `hrelay send` work from any directory.
+- Individual projects: run `hrelay init` once in the project root. It creates the marker and prints `export` lines for the environment; afterwards `hrelay server on`, `hrelay ui` and `hrelay send` work from any directory below that root without extra settings.
+- Verification: `hrelay status` prints `project_root`; confirm it is the directory you expect before sending.
+
+The `.hrelay` marker contains only a schema version, never a path, so copying it elsewhere does not point at the original root. Only a regular file with that name counts; directories and symlinks are ignored, and directory names are never used to guess a root.
 
 ## Agent integration
 

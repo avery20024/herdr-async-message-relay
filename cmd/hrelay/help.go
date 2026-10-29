@@ -16,6 +16,7 @@ var helpCommands = []helpEntry{
 	{"help [COMMAND [SUBCOMMAND]]", "Show overview or detailed help; no project or service required."},
 	{"version", "Show the native CLI version."},
 	{"send [--from ROLE] [--key KEY] ROLE MESSAGE", "Queue an original message; ensure service readiness by default."},
+	{"init [PATH]", "Create the .hrelay root marker in a team root and print environment examples."},
 	{"status", "Show queue and batch status."},
 	{"ui", "Browse message history in a read-only terminal UI."},
 	{"show msg-ID|batch-ID", "Inspect one stored message or batch."},
@@ -38,7 +39,7 @@ var helpActions = []helpEntry{
 var helpNotes = []string{
 	"Detailed help: hrelay help COMMAND [SUBCOMMAND] or COMMAND [SUBCOMMAND] --help.",
 	"Global --root and --lang precede the command; send flags precede ROLE MESSAGE.",
-	"Root: --root PATH > DELIVER_ROOT > current directory; no upward search.",
+	"Root: --root PATH > DELIVER_ROOT > nearest parent directory containing .hrelay (hrelay init); never the current directory by itself.",
 	"Sender: --from ROLE or HERDR_RELAY_FROM; hrelay never guesses a role.",
 	"Language: --lang auto|en|zh-TW > HERDR_RELAY_LANG > LC_ALL / LC_MESSAGES / LANG.",
 	"First service registration needs the inherited absolute HERDR_SOCKET_PATH.",
