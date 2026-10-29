@@ -73,6 +73,16 @@ func buildCommandHelpTopics() map[string]commandHelp {
 			},
 			examples: []string{"hrelay --root /absolute/team send --from dev --key report-1 gm 'Report ready.'", "hrelay --root /absolute/team send --from dev --ensure=false --to gm --body 'Report ready.'"},
 		},
+		"init": {
+			syntax: "init [PATH]",
+			notes: []string{
+				"Writes a .hrelay marker (schema only, no path) in PATH, default the current directory; an existing valid marker is kept.",
+				"Commands run below that directory find it by searching parent directories; only the marker is recognized, never directory names.",
+				"Prints DELIVER_ROOT and HERDR_RELAY_FROM examples; agents should still set both in their launch environment.",
+				"Does not start a relay, open the queue or register a service.",
+			},
+			examples: []string{"hrelay init /absolute/team"},
+		},
 		"ui": {
 			syntax: "ui",
 			notes: []string{
@@ -272,7 +282,7 @@ func printCommandHelp(w io.Writer, language i18n.Language, topic string) error {
 	b.WriteByte('\n')
 	line("Context and safety:")
 	for _, note := range append([]string{
-		"Root: --root PATH > DELIVER_ROOT > current directory; no upward search.",
+		"Root: --root PATH > DELIVER_ROOT > nearest parent directory containing .hrelay (hrelay init); never the current directory by itself.",
 		"Language: --lang auto|en|zh-TW > HERDR_RELAY_LANG > LC_ALL / LC_MESSAGES / LANG.",
 		"Help only reads static documentation; it never opens the queue or starts a service.",
 	}, detail.notes...) {

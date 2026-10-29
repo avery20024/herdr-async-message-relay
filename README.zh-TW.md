@@ -37,7 +37,7 @@ hrelay --root "$TEAM" server on
 hrelay --root "$TEAM" ui
 ```
 
-已設定 `DELIVER_ROOT` 的環境可直接執行 `hrelay ui`。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**預設：**UI 預設每秒自動刷新，缺少 Claude 攔截政策時預設**關閉**，保留既有明確設定。Ctrl+P 使用本 root 共用的「全域」標籤與兩行淡化提示；`?` 分為瀏覧、篩選、設置、其他。已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。現行路由與缺省政策需重啟為對應版本的 worker；發布或更新 CLI／UI 不會替換運行中的 worker。較早版本（例如 v0.6.0）缺少政策時預設開啟，升級保留既有明確開啟／關閉設定；攔截開啟時，未初始化的 Claude 角色仍會延後通知。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
+已設定 `DELIVER_ROOT` 的環境可在任何目錄直接執行 `hrelay ui`，詳見[團隊根目錄與實例](#團隊根目錄與實例)。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**預設：**UI 預設每秒自動刷新，缺少 Claude 攔截政策時預設**關閉**，保留既有明確設定。Ctrl+P 使用本 root 共用的「全域」標籤與兩行淡化提示；`?` 分為瀏覧、篩選、設置、其他。已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。現行路由與缺省政策需重啟為對應版本的 worker；發布或更新 CLI／UI 不會替換運行中的 worker。較早版本（例如 v0.6.0）缺少政策時預設開啟，升級保留既有明確開啟／關閉設定；攔截開啟時，未初始化的 Claude 角色仍會延後通知。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
 
 各版本變更、路由風險及升級注意事項見 [發布說明目錄](docs/releases/)。v0.6.0 加入依滑鼠位置分區捲動、左下淡色說明置底、欄位值強調，以及 `gg`／`G` 跳至已載入首尾資料。變更與升級注意事項見 [v0.6.0 發布說明](docs/releases/v0.6.0.md)，完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
 
@@ -86,6 +86,29 @@ wsl --install -d Ubuntu
 - 固定版本或回退可用 `herdr plugin install avery20024/herdr-async-message-relay --ref <tag>`；一般安裝省略 `--ref`，後續更新沿用安裝時記錄的 ref。
 - 從 [Releases](https://github.com/avery20024/herdr-async-message-relay/releases) 下載平台套件，核對 `checksums.txt` 後解壓，保留附帶授權與第三方聲明。
 - 從 checkout 安裝、修復 PATH、升級行為與 checksum 信任邊界見 [安裝細節](docs/cli-reference.zh-TW.md#安裝細節)。
+
+## 團隊根目錄與實例
+
+一個團隊根目錄對應一個 relay 實例。根目錄決定指令連到哪個佇列、socket 與背景服務，因此每個指令（包含 `hrelay ui`）都必須解析到與 worker 相同的根目錄。
+
+告知 hrelay 根目錄有兩種方式：設定 `DELIVER_ROOT` 變數，或在根目錄放置 `.hrelay` 標記檔，讓其下任何目錄執行的指令由外層攔截到該根目錄。變數永遠優先於標記檔。
+
+**根目錄的選擇順序**（先符合者優先）：
+
+1. `--root PATH`（命令列顯式覆寫）
+2. `DELIVER_ROOT`（變數，優先於標記檔）
+3. 自當前目錄起向上最近、含有 `hrelay init` 所建立 `.hrelay` 標記檔的目錄
+4. 以上皆無則報錯；hrelay 不會單以當前目錄作為根目錄
+
+**從根目錄到實例：**根目錄會轉為絕對路徑並解開符號連結。狀態目錄為 `$XDG_STATE_HOME/herdr-deliver/<sha256(根目錄) 前 16 位十六進位>`（未設定時為 `~/.local/state`），內含佇列與 `deliver.sock`；可用 `DELIVER_STATE_DIR` 覆寫。受管理的 launchd／systemd 服務以根目錄與狀態目錄的雜湊識別。因此不同根目錄擁有各自獨立的佇列、socket 與服務，同一台機器可並行多個專案；而解析後指向同一目錄的不同路徑則共用同一個實例。若以不同根目錄（例如某個角色子目錄）存取同一專案，會連到另一個空的實例，角色探索也找不到座位。
+
+**常見設定**
+
+- AI 團隊：由啟動器在各座位環境設定 `DELIVER_ROOT` 與 `HERDR_RELAY_FROM`，座位可留在各自目錄，仍能連到團隊 relay。已設定 `DELIVER_ROOT` 時，`hrelay ui` 與 `hrelay send` 可在任何目錄執行。
+- 個人專案：在專案根目錄執行一次 `hrelay init`，它會建立標記檔並印出環境變數的 `export` 範例；之後在該根目錄之下任何目錄執行 `hrelay server on`、`hrelay ui`、`hrelay send` 都不必再額外設定。
+- 核對：`hrelay status` 會印出 `project_root`；發送前先確認它是預期的目錄。
+
+`.hrelay` 標記檔只記錄格式版本、不記路徑，複製到他處不會指向原根目錄。只有同名的一般檔案有效，目錄與符號連結皆忽略，也不以目錄名稱推測根目錄。
 
 ## Agent 整合
 

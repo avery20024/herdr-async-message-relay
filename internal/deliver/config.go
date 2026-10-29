@@ -42,7 +42,12 @@ func EnvInt(name string, fallback, min, max int) (int, error) {
 
 func LoadConfig(root string) (c Config, err error) {
 	if root == "" {
-		root, err = os.Getwd()
+		var cwd string
+		cwd, err = os.Getwd()
+		if err != nil {
+			return
+		}
+		root, err = FindRoot(cwd)
 		if err != nil {
 			return
 		}
