@@ -247,7 +247,7 @@ class UITerminalTests(unittest.TestCase):
         self.output.clear()
         os.write(self.fd, b"?")
         # 說明關閉後footer完整重繪；草稿內容仍由下方實際保存值核對。
-        self.wait_for_text(b"Preferences 2/3")
+        self.wait_for_text(b"Preferences 2/2")
         self.assertFalse(self.preferences.exists())
         os.write(self.fd, b"\r")
         self.pump(0.3)
@@ -593,27 +593,27 @@ class UITerminalTests(unittest.TestCase):
         self.assertEqual(self.preferences.read_text(), "invalid preferences")
         self.finish(b"\x03")
 
-    def test_team_guard_default_toggle_cancel_and_reload(self):
+    def test_hidden_team_guard_preferences_do_not_access_policy(self):
         self.launch()
         count = len(self.server.requests)
+        self.server.guard_enabled[self.server.root] = True
         os.write(self.fd, b"\x10")
-        self.wait_for_text(b"On")
-        os.write(self.fd, b"jj\x1b[C")  # 第三欄關閉草稿。
+        self.wait_for_text(b"Preferences 1/2")
+        os.write(self.fd, b"j")
         self.pump(0.2)
-        os.write(self.fd, b"\x1b")
+        os.write(self.fd, b"j")
         self.pump(0.2)
-        self.assertNotIn(self.server.root, self.server.guard_enabled)
-        self.output.clear()
-        os.write(self.fd, b"\x10")
-        self.wait_for_text(b"On")
-        os.write(self.fd, b"jj\x1b[C\r")
-        self.pump(0.4)
-        self.assertIs(self.server.guard_enabled[self.server.root], False)
-        self.assertEqual(sum(method == "PUT" for method, _ in self.server.guard_requests), 1)
-        self.assertEqual(len(self.server.requests), count, "policy editing must not fetch message history")
-        self.output.clear()
-        os.write(self.fd, b"\x10")
-        self.wait_for_text(b"Off")
+        for text in (b"Claude interception", b"Question timing is recorded", b"If delivery stalls"):
+            self.assertNotIn(text, bytes(self.output))
+        os.write(self.fd, b"\x12\r")  # 重載及儲存僅處理本機偏好。
+        self.pump(0.3)
+        self.assertTrue(self.preferences.exists())
+        self.assertIs(self.server.guard_enabled[self.server.root], True)
+        self.assertEqual(self.server.guard_requests, [])
+        self.assertEqual(len(self.server.requests), count)
+        os.write(self.fd, b"\x10\x1b")
+        self.pump(0.2)
+        self.assertEqual(self.server.guard_requests, [])
         self.finish(b"\x03")
 
     def test_ctrl_c_restores_terminal(self):

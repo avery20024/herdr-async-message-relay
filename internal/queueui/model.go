@@ -283,13 +283,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		if key == "ctrl+r" {
-			if m.guardBusy {
-				return m, nil
-			}
 			m.reloadPreferences()
-			if m.preferencesOpen {
-				return m, m.guardRequest(false)
-			}
 			return m, nil
 		}
 		if key == "?" || key == "shift+/" || key == "shift+?" {
