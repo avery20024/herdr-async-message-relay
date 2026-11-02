@@ -48,13 +48,10 @@ func (m *Model) openPreferences() tea.Cmd {
 	m.preferencesDraft = m.preferences
 	m.preferenceField = 0
 	m.preferencesOpen = true
-	return m.guardRequest(false)
+	return nil
 }
 
 func (m *Model) savePreferences() tea.Cmd {
-	if m.guardBusy || m.guardUnconfirmed {
-		return nil
-	}
 	var err error
 	if m.preferencesStore == nil || m.configUnreadable {
 		err = errors.New("reload valid preferences before saving")
@@ -68,21 +65,11 @@ func (m *Model) savePreferences() tea.Cmd {
 	m.applyPreferences(m.preferencesDraft)
 	m.configError = ""
 	m.configNotice = m.text("Preferences saved.")
-	if m.guardReady && m.guardDraft != m.guardSettings.Policy.Enabled {
-		m.configNotice = m.text("Local preferences saved; team save pending.")
-		return m.guardRequest(true)
-	}
 	m.preferencesOpen = false
 	return nil
 }
 
 func (m *Model) cyclePreference(direction int) {
-	if m.preferenceField == 2 {
-		if m.guardReady && !m.guardBusy {
-			m.guardDraft = !m.guardDraft
-		}
-		return
-	}
 	values := themeIDs
 	current := &m.preferencesDraft.Theme
 	if m.preferenceField == 0 {
@@ -100,16 +87,13 @@ func (m *Model) cyclePreference(direction int) {
 }
 
 func (m *Model) preferencesKey(key string) tea.Cmd {
-	if m.guardSaving {
-		return nil
-	}
 	switch key {
 	case "esc":
 		m.preferencesOpen = false
 	case "up", "k":
-		m.preferenceField = (m.preferenceField + 2) % 3
+		m.preferenceField = (m.preferenceField + 1) % 2
 	case "down", "j":
-		m.preferenceField = (m.preferenceField + 1) % 3
+		m.preferenceField = (m.preferenceField + 1) % 2
 	case "left", "h":
 		m.cyclePreference(-1)
 	case "right", "l":
@@ -136,7 +120,6 @@ func (m *Model) preferencesLines() []string {
 		langLabel, themeLabel = "L", "T"
 	}
 	lines := []string{m.text("Preferences"), langLabel + ": " + language, themeLabel + ": " + name}
-	lines = append(lines, m.guardLines()...)
 	if m.configError != "" {
 		if m.height < 12 {
 			lines[0] = "! CFG"
