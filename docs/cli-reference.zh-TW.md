@@ -8,7 +8,7 @@
 
 目前為早期版本，支援 macOS／Linux 的 arm64 與 amd64，Herdr 相容基準為 **0.9.3**，不支援 Windows。
 
-**角色探索（v0.6.0 及更早版本尚無此行為）：**先由 `herdr agent list` 取得實際 AI，將絕對 `foreground_cwd` 與 relay root 解析為實體路徑，要求前景目錄既存且嚴格位於 root 內，再以實體 basename 作為角色名。不要求固定目錄名稱、不退回 `cwd`，也沒有精確／子目錄排名。root 本身、相對或不存在路徑、符號連結越界皆排除；同名角色即使只有一席 idle 仍視為衝突。pane／狀態序號無效也不投遞。名稱以 Unicode 字母開頭，後續可為字母、組合符號、數字、底線或連字號，最多 64 UTF-8 bytes；不允許分隔符、空白或控制字元。保持前景目錄穩定：進入子目錄會改變角色名。發送身分仍為明確宣告而非身分驗證；合法離線角色可先入列，不要求預建目錄。探索不會偽造 Claude SessionStart 或 ready。root 內任意深度的同名前景目錄都參與定址；重名會延後投遞，只剩同 basename 的替代座位時則可接收該角色訊息。請使用可信任 root 與穩定目錄。名稱精確比對，未做 Unicode 正規化或同形字辨識。
+**角色探索：**agent 的絕對 foreground_cwd 與 root 解析符號連結後，要求既存目錄嚴格位於 root 內；root 本身、相對／不存在路徑及越界一律排除。不要求固定語言目錄、不退回 shell cwd、不作目錄排名。**尚未發布的分頁路由（v0.8.1 未包含）：**以 tab_id 關聯 herdr agent list／herdr tab list，只去除開頭 `[n] ` 顯示序號，依有效分頁名稱 > 有效 agent 名稱 > 實體前景目錄 basename 定址。高順位名稱取代低順位名稱，不新增別名。分頁查詢失敗／格式錯誤、重複 tab_id 或關聯分頁消失時，本輪探索保守失敗，下輪重查；舊 Herdr 無 tab_id 保留 agent／目錄方式。同 CWD 不同完整分頁名稱可多席獨立收信，建議一分頁一席收信 AI。相同完整地址即使只有一席 idle 仍拒絕；pane／序號無效也不投遞。名稱以 Unicode 字母開頭，後續為字母、組合符號、數字、底線或連字號，最多 64 UTF-8 bytes；不接受空白／分隔符／控制字元，精確比對、不做 Unicode 正規化或同形字辨識。修改有效分頁／agent 名稱會改變地址；僅目錄備援時進入子目錄才影響地址。發送身份為明確宣告而非認證，離線合法地址可先入列、不要求預建個別目錄。使用可信任 root 與唯一身份；探索不偽造 Claude ready。須另核對 worker 版本及服務切換，僅更新 CLI 不會替換舊 worker。
 
 Guard 設定 API 的角色清單來自即時座位與既有觀測，不掃描固定目錄。探索失敗以 `discovery_error` 呈現，UI 會提示清單可能不完整，但不阻止緊急關閉攔截政策。
 
@@ -214,7 +214,7 @@ hrelay --lang auto --help
 
 ## 範例：自動 rename 後仍保留角色身分
 
-自動 rename 可能修改顯示名稱，但顯示名稱不是路由角色。現行 [`herdr-send.sh` 範例](../examples/herdr-send.sh) 改用明確身分：優先 `HERDR_SEND_FROM`，其次 `HERDR_RELAY_FROM`，不掃描特定語言目錄或從目前 CWD 猜角色。已複製到團隊的舊腳本不會自動更新；接收方仍由 relay 依上述 foreground 規則探索。
+有效分頁／agent 名稱是路由身份，不只是顯示文字；自動 rename 可能改變地址，應保持定址標籤穩定。現行 [`herdr-send.sh` 範例](../examples/herdr-send.sh) 改用明確身分：優先 `HERDR_SEND_FROM`，其次 `HERDR_RELAY_FROM`，不掃描特定語言目錄或從目前 CWD 猜角色。已複製到團隊的舊腳本不會自動更新；接收方由 relay 依上述分頁／agent／前景目錄順位探索。
 
 將腳本複製到**團隊專案**的 `scripts/`，不要放在插件 managed checkout 裡使用：
 
@@ -259,7 +259,7 @@ hrelay --root "$TEAM" send --from dev --key task-123-report-v1 gm '完整報告�
 - root 優先使用 `DELIVER_ROOT`，未設定時取腳本所在目錄的上一層。**須先複製到 `<team-root>/scripts/herdr-send.sh`**；直接在本 repo 的 `examples/` 執行會把本 repo 當作 root。
 - sender 優先使用 `HERDR_SEND_FROM`，其次為 `HERDR_RELAY_FROM`，明確傳入 `--from`；缺少身分即拒絕，不從 CWD 猜測。
 - 名稱安全由原生 CLI 統一驗證；合法離線角色可先入列，不要求固定目錄存在，等唯一座位出現才投遞。
-- 只改顯示名稱不影響路由；改變 foreground 目錄 basename 則改變角色名，沒有舊式 CWD 排名。
+- 修改有效分頁名稱會改變路由；沒有有效分頁名時，依 agent 名稱或 foreground basename 定址，不作舊式 CWD 排名。
 - 需要 Bash，且呼叫座位的 PATH 可找到 `hrelay` v0.2+。不依賴 jq、不探索 plugin、不退回 checkout binary，也不接受舊 `HERDR_RELAY_BIN`／`HERDR_DELIVER_BIN` 覆寫。本版範例診斷採英文。
 - 原文與換行保持單一參數，請正確使用 shell 引號。腳本不注入按鍵，也不直接發送 prompt。
 - 短語法仍先確保相同專案的服務就緒，再入列。首次登記需要預期的絕對 `HERDR_SOCKET_PATH`，自訂 state／service 路徑須保持一致，不會繞過持久暫停。
