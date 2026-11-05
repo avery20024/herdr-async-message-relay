@@ -22,6 +22,8 @@ from urllib.parse import parse_qs, urlsplit
 
 class UIHandler(http.server.BaseHTTPRequestHandler):
     def guard_response(self):
+        # 強制先畫Loading再回應，覆蓋非同步局部重畫的測試時序。
+        time.sleep(getattr(self.server, "guard_response_delay", 0))
         body = json.dumps({"project_root": self.server.root,
                            "policy": {"version": 1, "enabled": self.server.guard_enabled.get(self.server.root, False)},
                            "observations": [{"role": "gm", "status": "uninitialized", "pending_count": 0}]}).encode()
@@ -591,27 +593,31 @@ class UITerminalTests(unittest.TestCase):
         self.finish(b"\x03")
 
     def test_team_guard_default_toggle_cancel_and_reload(self):
+        self.server.guard_response_delay = 0.2
         self.launch()
         count = len(self.server.requests)
-        os.write(self.fd, b"\x10")
-        self.wait_for_text(b"Claude interception (global): Off")
+
+        def open_guard(expected):
+            # 每次只看新輸出；Loading→Off/On可僅重畫值，不要求重送整列。
+            self.output.clear()
+            os.write(self.fd, b"\x10")
+            self.wait_for_text(b"Claude interception (global):")
+            self.wait_for_text(expected)
+
+        open_guard(b"Off")
         os.write(self.fd, b"jj\x1b[C")  # 第三欄開啟草稿。
         self.pump(0.2)
         os.write(self.fd, b"\x1b")
         self.pump(0.2)
         self.assertNotIn(self.server.root, self.server.guard_enabled)
         self.assertFalse(any(method == "PUT" for method, _ in self.server.guard_requests))
-        self.output.clear()
-        os.write(self.fd, b"\x10")
-        self.wait_for_text(b"Claude interception (global): Off")
+        open_guard(b"Off")
         os.write(self.fd, b"jj\x1b[C\r")
-        self.pump(0.4)
+        self.wait_for_text(b"Preferences saved.")
         self.assertIs(self.server.guard_enabled[self.server.root], True)
         self.assertEqual(sum(method == "PUT" for method, _ in self.server.guard_requests), 1)
         self.assertEqual(len(self.server.requests), count, "policy editing must not fetch message history")
-        self.output.clear()
-        os.write(self.fd, b"\x10")
-        self.wait_for_text(b"Claude interception (global): On")
+        open_guard(b"On")
         os.write(self.fd, b"\x1b")
         self.pump(0.2)
         self.finish(b"\x03")
