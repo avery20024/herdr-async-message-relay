@@ -11,12 +11,12 @@ Use the installed **native `hrelay` command**. A project-specific forwarding scr
 
 Your launch environment must supply:
 
-- `DELIVER_ROOT`: absolute relay root. In discovery, actual agent `foreground_cwd` directories must resolve strictly inside it; their basenames are the role names, with no fixed container directory. v0.6.0 and earlier still use the old routing.
+- `DELIVER_ROOT`: absolute relay root. Actual agent `foreground_cwd` directories must resolve strictly inside it. Unreleased tab routing joins agent/tab lists by tab_id and uses valid tab label (without `[n] ` prefix), then agent name, then foreground basename; no fixed directory language. This requires the supporting worker and is not in v0.8.1.
 - `HERDR_RELAY_FROM`: your actual stable sender role, supplied by the team launcher. Alternatively pass an explicitly authorized `--from ROLE`.
 - `HERDR_SOCKET_PATH`: Herdr's absolute socket path for first service registration, normally inherited inside a Herdr pane.
 - Any custom `DELIVER_STATE_DIR` / `HERDR_RELAY_SERVICE_HOME` consistently across the caller and startup hook.
 
-Choose the target role from the task's handoff instructions. Do not invent a role, impersonate another sender, or substitute a pane id. The relay resolves the live target pane later; a busy or currently absent role is not a reason to resend.
+Choose the target's complete address from the task's handoff instructions. Multiple tabs can share a directory, but each must have a unique stable tab label and explicit sender identity (for example dispatch-front-login versus dispatch-back-sort); never use a shared role type as their address. Valid tab/agent names affect routing, not just appearance. Do not invent a role, impersonate another sender, or substitute a pane id. The relay resolves the live target pane later; a busy or currently absent role is not a reason to resend.
 
 If context is missing, ask the team to configure it. Do not guess the project from the plugin installation path. Installation cannot rewrite the PATH or environment of an already-running agent; if the command is unavailable, use the reported stable executable path or have the operator correct the launch environment.
 

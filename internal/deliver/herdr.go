@@ -25,6 +25,8 @@ type AgentSession struct {
 
 type Agent struct {
 	Name          string       `json:"name"`
+	TabID         string       `json:"tab_id"`
+	TabLabel      string       `json:"-"`
 	Session       AgentSession `json:"agent_session"`
 	CWD           string       `json:"cwd"`
 	ForegroundCWD string       `json:"foreground_cwd"`
@@ -91,7 +93,55 @@ func (h CLIHerdr) List(ctx context.Context) ([]Agent, error) {
 	if envelope.Result.Agents == nil {
 		return nil, errors.New("invalid herdr agent list")
 	}
-	return envelope.Result.Agents, nil
+	agents := envelope.Result.Agents
+	needsTabs := false
+	for _, a := range agents {
+		needsTabs = needsTabs || a.TabID != ""
+	}
+	// 舊版 Herdr 沒有 tab_id 時保留原探索方式；有關聯資訊時不得靜默退回。
+	if !needsTabs {
+		return agents, nil
+	}
+	data, err = h.run(ctx, "tab", "list")
+	if err != nil {
+		return nil, err
+	}
+	var tabs struct {
+		Error  json.RawMessage `json:"error"`
+		Result struct {
+			Tabs []struct {
+				ID    string `json:"tab_id"`
+				Label string `json:"label"`
+			} `json:"tabs"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(data, &tabs); err != nil {
+		return nil, err
+	}
+	if (len(tabs.Error) > 0 && string(tabs.Error) != "null") || tabs.Result.Tabs == nil {
+		return nil, errors.New("invalid herdr tab list")
+	}
+	labels := make(map[string]string, len(tabs.Result.Tabs))
+	for _, tab := range tabs.Result.Tabs {
+		if tab.ID == "" {
+			return nil, errors.New("herdr tab missing tab_id")
+		}
+		if _, exists := labels[tab.ID]; exists {
+			return nil, errors.New("duplicate herdr tab_id")
+		}
+		labels[tab.ID] = tabNumberPrefix.ReplaceAllString(tab.Label, "")
+	}
+	for i := range agents {
+		if agents[i].TabID == "" {
+			continue
+		}
+		label, exists := labels[agents[i].TabID]
+		if !exists {
+			return nil, errors.New("agent tab missing from herdr tab list; retry discovery")
+		}
+		agents[i].TabLabel = label
+	}
+	return agents, nil
 }
 
 func (h CLIHerdr) Prompt(ctx context.Context, pane, body string) error {
@@ -116,6 +166,7 @@ func (h CLIHerdr) Prompt(ctx context.Context, pane, body string) error {
 }
 
 var panePattern = regexp.MustCompile(`^w[0-9A-Za-z]+:p[0-9A-Za-z]+$`)
+var tabNumberPrefix = regexp.MustCompile(`^\[[0-9]+\] `)
 
 // RoleFromDirectory 僅依既存前景目錄的實體路徑與 root 邊界判斷，不退回 shell cwd。
 func RoleFromDirectory(root, foreground string) (string, error) {
@@ -129,12 +180,15 @@ func RoleFromDirectory(root, foreground string) (string, error) {
 	return name, nil
 }
 
-// RoleFromAgent 以 herdr agent rename 設定的名稱為角色；沒有有效名稱時才用前景目錄名稱。
-// 兩種情況都要求前景目錄嚴格位於 root 內，名稱不能把其他專案的座位拉進本 relay。
+// RoleFromAgent 優先以有效分頁名稱定址，其次為 agent 名稱，最後才用前景目錄名稱。
+// 三種情況都要求前景目錄嚴格位於 root 內，名稱不能把其他專案的座位拉進本 relay。
 func RoleFromAgent(root string, a Agent) (string, error) {
 	dir, err := directoryName(root, a.ForegroundCWD)
 	if err != nil {
 		return "", err
+	}
+	if roles.ValidName(a.TabLabel) {
+		return a.TabLabel, nil
 	}
 	if roles.ValidName(a.Name) {
 		return a.Name, nil
