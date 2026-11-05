@@ -111,8 +111,8 @@ else:
         self.assertEqual({p['pane'] for p in prompts}, {"wT:p1", "wT:p2", "wT:p3"})
         self.assertFalse((self.root / "角色").exists())
 
-    def test_missing_policy_defaults_off_but_explicit_enable_is_respected(self):
-        self.agents[0]['agent_session']['agent'] = 'claude'
+    def test_enabled_guard_only_blocks_observed_pending_questions(self):
+        self.agents[0]['agent_session'] = dict(agent='claude', kind='id', value='session-a')
         self.save_agents()
         first = self.send('alpha')
         self.wait_for(lambda: self.message_state(first) == 'submitted')
@@ -121,11 +121,38 @@ else:
         self.agents[0]['state_change_seq'] = 2
         self.save_agents()
         second = self.send('alpha')
-        time.sleep(0.3)
-        self.assertEqual(self.message_state(second), 'queued')
-        self.cli('claude-guard', '--team', 'disable')
         self.wait_for(lambda: self.message_state(second) == 'submitted')
-        self.assertFalse((self.state / 'claude-guard' / 'alpha').exists())
+        self.assertFalse((self.state / 'claude-guard/alpha/state.json').exists())
+
+        def hook(name, tool_id):
+            event = dict(hook_event_name=name, session_id='session-a',
+                         tool_name='AskUserQuestion', tool_use_id=tool_id)
+            subprocess.run([str(self.binary), '--root', str(self.root), 'claude-hook',
+                            '--role', 'alpha', '--pane', 'wT:p1'], env=self.env,
+                           input=json.dumps(event), check=True, capture_output=True,
+                           text=True, timeout=10)
+        hook('PreToolUse', 'q1')  # 不需要 SessionStart；自由輸入時Herdr仍為idle。
+        self.agents[0]['state_change_seq'] = 3
+        self.save_agents()
+        third = self.send('alpha')
+        time.sleep(0.3)
+        self.assertEqual(self.message_state(third), 'queued')
+        hook('PostToolUseFailure', 'q1')
+        time.sleep(0.3)
+        self.assertEqual(self.message_state(third), 'queued')
+        hook('PostToolUse', 'q1')
+        self.wait_for(lambda: self.message_state(third) == 'submitted')
+
+        hook('PreToolUse', 'q2')
+        self.agents[0]['state_change_seq'] = 4
+        self.save_agents()
+        fourth = self.send('alpha')
+        time.sleep(0.3)
+        self.assertEqual(self.message_state(fourth), 'queued')
+        self.cli('claude-guard', '--team', 'disable')
+        self.wait_for(lambda: self.message_state(fourth) == 'submitted')
+        state = json.loads((self.state / 'claude-guard/alpha/state.json').read_text())
+        self.assertEqual(state['pending'], {'q2': True})
 
     def test_conflict_stays_queued_then_recovers(self):
         duplicate = dict(self.agents[0], pane_id="wT:p9")

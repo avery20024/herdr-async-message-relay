@@ -37,7 +37,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 				{"team", "", "team-wide interception policy"},
 				{"role", "ROLE", "explicit recipient role"},
 			},
-			notes:    []string{"Interception defaults off; Hooks record even when interception is off.", "Switching policy preserves observations; missing SessionStart is not ready.", "status reads policy and state; malformed policies fail closed. No service is started."},
+			notes:    []string{"Interception defaults off; Hooks record even when interception is off.", "Only matching observed pending questions block; missing/unusable observations do not add a block.", "status reads policy and state; malformed policies fail closed. No service is started."},
 			examples: []string{"hrelay --root /absolute/team claude-guard --role gm status", "hrelay --root /absolute/team claude-guard --team disable"},
 		},
 		"claude-hook": {
@@ -46,8 +46,14 @@ func buildCommandHelpTopics() map[string]commandHelp {
 				{"role", "ROLE", "explicit recipient role"},
 				{"pane", "ID", "Claude pane ID; defaults to HERDR_PANE_ID"},
 			},
-			notes:    []string{"Experimental synchronous hook; reads one Claude event from stdin, never an answer.", "--role is required; --pane defaults to HERDR_PANE_ID. Recording failures warn when interception is off; otherwise exit 2.", "Do not install these hooks in global Claude settings; missing context can block unrelated questions.", "Use only with a verified role/session binding; never synthesize ready events for production panes."},
+			notes:    []string{"Experimental synchronous hook; reads one Claude event from stdin, never an answer.", "--role is required; --pane defaults to HERDR_PANE_ID. Observation errors warn; invalid input/context or policy remains an error.", "Do not install these hooks in global Claude settings; missing context can block unrelated questions.", "Use only with a verified role/session binding; never synthesize ready events for production panes."},
 			examples: []string{"hrelay --root /absolute/test-team claude-hook --role gm --pane REAL_TEST_PANE < event.json"},
+		},
+		"claude-run": {
+			syntax:   "claude-run --role ROLE [--pane ID] -- claude [ARGS...]",
+			options:  []helpOption{{"role", "ROLE", "explicit Claude role"}, {"pane", "ID", "actual Claude pane"}},
+			notes:    []string{"Records a new launch time and random generation, then execs the explicitly requested command.", "Supplies root/state/role/pane/binary and HRELAY_CLAUDE_RUN_ID to child Hooks; no worker is started.", "Every restart must use this wrapper to exclude old same-session questions. Do not start a model without authorization."},
+			examples: []string{"hrelay --root /absolute/test-team claude-run --role reviewer --pane REAL_TEST_PANE -- claude --resume SESSION_ID"},
 		},
 		"version": {
 			syntax:   "version",

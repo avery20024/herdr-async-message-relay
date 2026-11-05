@@ -37,7 +37,7 @@ hrelay --root "$TEAM" server on
 hrelay --root "$TEAM" ui
 ```
 
-已設定 `DELIVER_ROOT` 的環境可在任何目錄直接執行 `hrelay ui`，詳見[團隊根目錄與實例](#團隊根目錄與實例)。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**預設：**UI 預設每秒自動刷新，缺少 Claude 攔截政策時預設**關閉**，保留既有明確設定。Ctrl+P 使用本 root 共用的「全域」標籤與兩行淡化提示；`?` 分為瀏覧、篩選、設置、其他。已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。現行路由與缺省政策需重啟為對應版本的 worker；發布或更新 CLI／UI 不會替換運行中的 worker。較早版本（例如 v0.6.0）缺少政策時預設開啟，升級保留既有明確開啟／關閉設定；攔截開啟時，未初始化的 Claude 角色仍會延後通知。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
+已設定 `DELIVER_ROOT` 的環境可在任何目錄直接執行 `hrelay ui`，詳見[團隊根目錄與實例](#團隊根目錄與實例)。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**預設：**UI 預設每秒自動刷新，缺少 Claude 攔截政策時預設**關閉**，保留既有明確設定。v0.8.2 UI 已恢復 Ctrl+P 實驗性攔截開關與兩行淡化提示（v0.8.1 仍隱藏）；開啟選單不改政策，修改草稿後按 Enter 才儲存；`?` 分為瀏覧、篩選、設置、其他。已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。現行路由與缺省政策需重啟為對應版本的 worker；發布或更新 CLI／UI 不會替換運行中的 worker。較早版本（例如 v0.6.0）缺少政策時預設開啟，升級保留既有明確開啟／關閉設定；**v0.8.2 觀測式攔截：**缺少或無法使用問答觀測時，不再額外擋通知；只有已觀測到配對身份的 PreToolUse、尚未收到該問題 PostToolUse 才擋。新增 `claude-run` 啟動包裝器記錄時間與世代，同 session 重啟後可排除舊 pending／遲到 Hook。v0.8.1 仍採原本嚴格 ready 規則。缺失事件可能漏攔，這是明確接受的 fail-open 取捨，不是完整防護。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
 
 各版本變更、路由風險及升級注意事項見 [發布說明目錄](docs/releases/)。v0.6.0 加入依滑鼠位置分區捲動、左下淡色說明置底、欄位值強調，以及 `gg`／`G` 跳至已載入首尾資料。變更與升級注意事項見 [v0.6.0 發布說明](docs/releases/v0.6.0.md)，完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
 
@@ -120,7 +120,7 @@ export HERDR_RELAY_FROM=dev
 hrelay send gm 'Task 123 已備妥，請查核證據。'
 ```
 
-**角色探索：**前景目錄解析符號連結後，必須是嚴格位於 relay root 內的既存目錄。定址依序採有效的**分頁名稱**、Herdr agent 名稱、實體前景目錄 basename；不退回 shell `cwd`、不要求固定語言目錄。worker 以 `tab_id` 關聯 `herdr agent list` 與 `herdr tab list`，只移除 Herdr 的 `[n] ` 顯示序號。拓樸缺漏／無效或完整地址重複時暫緩投遞。名稱以 Unicode 字母開頭，後續允許字母、組合符號、數字、底線或連字號，最多 64 UTF-8 bytes，精確比對、不做 Unicode 正規化。合法離線地址可先入列，不必為每個地址建立目錄。**分頁名稱路由尚未發布，須使用支援的 worker；v0.8.1 僅支援 agent 名稱／目錄路由。**更新 CLI 或文件不會替換運行中的 worker。詳見 [agent 文件](docs/agent-usage.md)、[skill](skills/hrelay/SKILL.md) 與 [CLI 參考](docs/cli-reference.zh-TW.md)。
+**角色探索：**前景目錄解析符號連結後，必須是嚴格位於 relay root 內的既存目錄。定址依序採有效的**分頁名稱**、Herdr agent 名稱、實體前景目錄 basename；不退回 shell `cwd`、不要求固定語言目錄。worker 以 `tab_id` 關聯 `herdr agent list` 與 `herdr tab list`，只移除 Herdr 的 `[n] ` 顯示序號。拓樸缺漏／無效或完整地址重複時暫緩投遞。名稱以 Unicode 字母開頭，後續允許字母、組合符號、數字、底線或連字號，最多 64 UTF-8 bytes，精確比對、不做 Unicode 正規化。合法離線地址可先入列，不必為每個地址建立目錄。**分頁名稱路由須使用 v0.8.2 worker；v0.8.1 僅支援 agent 名稱／目錄路由。**更新 CLI 或文件不會替換運行中的 worker。詳見 [agent 文件](docs/agent-usage.md)、[skill](skills/hrelay/SKILL.md) 與 [CLI 參考](docs/cli-reference.zh-TW.md)。
 
 **多席具名座位：**例如分頁 `dispatch-front-login` 與 `dispatch-back-sort` 可共用前景目錄但各自收信。每席 HERDR_RELAY_FROM 與收件地址使用完整名稱，不寄到共用角色類型；每分頁只放一席收信 AI。同一完整地址對應多席時，即使只有一席 idle 仍拒絕，不任選、不廣播。分頁／agent 名稱是路由身份，不是純裝飾；有效分頁名稱覆蓋 agent／目錄名稱，被覆蓋者不再是別名。舊 Herdr 沒有 tab_id 時保留 agent／目錄備援；有 tab_id 但查詢失敗或分頁在兩次快照間消失時，本輪保守不投遞，下輪再探索。
 

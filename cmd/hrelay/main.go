@@ -127,6 +127,9 @@ func run(ctx context.Context, args []string) (err error) {
 	if global.Arg(0) == "service" {
 		return runService(ctx, *root, global.Args()[1:])
 	}
+	if global.Arg(0) == "claude-run" {
+		return runClaude(ctx, *root, global.Args()[1:])
+	}
 	if global.Arg(0) == "claude-hook" {
 		if err := runClaudeGuard(ctx, *root, global.Args()[1:], true); err != nil {
 			return claudeHookError{err}

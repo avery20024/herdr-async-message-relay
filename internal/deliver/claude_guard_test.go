@@ -20,15 +20,24 @@ func TestClaudeGuardKeepsQuestionQueued(t *testing.T) {
 	h := &fakeHerdr{agents: []Agent{a}}
 	w := worker(s, c, h)
 	msg := enqueue(t, s, "gm", "defer this notification")
-	for _, name := range []string{"", "SessionStart", "PreToolUse", "PostToolUse"} {
+	for _, name := range []string{"PreToolUse", "PostToolUse"} {
 		if name != "" {
 			if err := m.Apply(ctx, "gm", a.Pane, claudeguard.Event{Name: name, Session: a.Session.Value, Tool: "AskUserQuestion", ToolID: "q1"}); err != nil {
 				t.Fatal(err)
 			}
 		}
-		// SessionStart 的 ready 只測 guard；避免真的提交直到最後一步。
-		if name == "SessionStart" {
-			continue
+		if name == "PreToolUse" {
+			// 模擬切到自由文字後持續idle，再切回blocked；不是實際畫面驗收。
+			for _, status := range []string{"blocked", "idle", "idle", "idle", "blocked", "idle"} {
+				current := a
+				current.Status = status
+				if err := w.Dispatch(ctx, "gm", current); err != nil {
+					t.Fatal(err)
+				}
+				if h.count() != 0 {
+					t.Fatal("focus/status changes released pending question")
+				}
+			}
 		}
 		if err := w.Dispatch(ctx, "gm", a); err != nil {
 			t.Fatal(err)

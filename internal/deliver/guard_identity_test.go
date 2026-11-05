@@ -7,7 +7,7 @@ import (
 	"github.com/avery20024/herdr-async-message-relay/internal/claudeguard"
 )
 
-func TestTeamGuardUnknownIdentityDoesNotBypassObservedClaude(t *testing.T) {
+func TestTeamGuardUnmatchedIdentityDoesNotBlock(t *testing.T) {
 	for _, kind := range []string{"", "pi"} {
 		t.Run(kind, func(t *testing.T) {
 			s, c := fixture(t)
@@ -29,10 +29,7 @@ func TestTeamGuardUnknownIdentityDoesNotBypassObservedClaude(t *testing.T) {
 				t.Fatal(err)
 			}
 			got, _ := s.Q.GetMessage(t.Context(), msg.ID)
-			want := "queued"
-			if kind == "pi" {
-				want = "submitted"
-			}
+			want := "submitted"
 			if got.State != want {
 				t.Fatal(kind, got.State, want)
 			}

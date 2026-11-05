@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -49,7 +48,7 @@ func TestUnconfiguredClaudeHooksRecordWithoutService(t *testing.T) {
 	}
 }
 
-func TestCorruptObservationIsBlockingHookError(t *testing.T) {
+func TestCorruptObservationWarnsWithoutBlockingQuestion(t *testing.T) {
 	for _, policy := range []string{`broken`, `[]`} {
 		t.Run(policy, func(t *testing.T) {
 			c := cliConfig(t)
@@ -81,9 +80,8 @@ func TestCorruptObservationIsBlockingHookError(t *testing.T) {
 			os.Stdin = input
 			t.Cleanup(func() { os.Stdin = old })
 			err = run(t.Context(), []string{"--root", c.Root, "claude-hook", "--role", "gm", "--pane", "wC:p5"})
-			var hookErr claudeHookError
-			if !errors.As(err, &hookErr) {
-				t.Fatalf("expected blocking hook error: %v", err)
+			if err != nil {
+				t.Fatalf("observation error blocked question: %v", err)
 			}
 			if got, err := os.ReadFile(filepath.Join(dir, "state.json")); err != nil || string(got) != policy {
 				t.Fatal("corrupt state was replaced", err)

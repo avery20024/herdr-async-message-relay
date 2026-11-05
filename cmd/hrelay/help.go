@@ -29,6 +29,7 @@ var helpCommands = []helpEntry{
 	{"cli install [--bin-dir ABSOLUTE_PATH]", "Install or repair the stable native CLI."},
 	{"serve", "Run the relay in the foreground."},
 	{"claude-guard --team enable|disable|status", "Configure team interception; --role ROLE status inspects observations."},
+	{"claude-run --role ROLE [--pane ID] -- claude [ARGS...]", "Record a harness generation and exec the requested command; no service startup."},
 	{"claude-hook --role ROLE [--pane ID]", "Experimental: read a Claude hook event from stdin; no service startup."},
 	{"resolve --batch ID --action retry|submitted", "Resolve an uncertain batch only after inspection; requires --note and --confirm."},
 }
