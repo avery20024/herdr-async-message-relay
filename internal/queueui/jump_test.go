@@ -21,12 +21,12 @@ func TestLoadedEndpointShortcuts(t *testing.T) {
 				t.Fatalf("last jump fetched or lost layout at %v: selected=%d top=%d", size, m.selected, m.top)
 			}
 			_, cmd = m.Update(key("g"))
-			if cmd != nil || m.selected != 49 || !m.goTopPending {
-				t.Fatal("single g jumped or failed to arm")
+			if cmd != nil || m.selected != 0 || m.top != 0 || m.detailOffset != 0 || m.metadataOffset != 0 || len(f.calls) != calls || m.next != next {
+				t.Fatal("single g did not jump to first loaded row without fetching")
 			}
 			_, cmd = m.Update(key("g"))
-			if cmd != nil || m.selected != 0 || m.top != 0 || m.goTopPending || len(f.calls) != calls {
-				t.Fatal("gg did not jump to first loaded row without fetching")
+			if cmd != nil || m.selected != 0 || m.top != 0 || len(f.calls) != calls {
+				t.Fatal("repeated g fetched or moved selection")
 			}
 		}
 	}
@@ -50,7 +50,7 @@ func TestJumpTargetsCurrentLoadedTail(t *testing.T) {
 }
 
 func TestJumpCancelsPendingPaginationSelection(t *testing.T) {
-	for _, sequence := range [][]string{{"G"}, {"g", "g"}} {
+	for _, sequence := range [][]string{{"G"}, {"g"}} {
 		m, _ := ready(t)
 		m.selected = 49
 		m.clampLayout()
@@ -69,22 +69,17 @@ func TestJumpCancelsPendingPaginationSelection(t *testing.T) {
 	}
 }
 
-func TestGoTopSequenceInterrupted(t *testing.T) {
+func TestGoTopAfterOtherEvents(t *testing.T) {
 	for _, interrupt := range []tea.Msg{key("k"), key("r"), key("?"), key("ctrl+f"), key("ctrl+p"), key("ctrl+r"), wheel(1, 2, true), tea.MouseClickMsg{X: 1, Y: 2}, tea.MouseReleaseMsg{X: 1, Y: 2}, tea.WindowSizeMsg{Width: 180, Height: 30}} {
 		m, _ := ready(t)
 		m.preferencesStore = testStore(t)
 		m.selected = 20
 		m.clampLayout()
-		m.Update(key("g"))
 		m.Update(interrupt)
-		if m.goTopPending {
-			t.Fatalf("sequence survived interrupt %T %v", interrupt, interrupt)
-		}
 		m.popup, m.preferencesOpen, m.helpOpen = false, false, false
-		before := m.selected
 		m.Update(key("g"))
-		if m.selected != before {
-			t.Fatal("isolated g jumped after interruption")
+		if m.selected != 0 || m.top != 0 {
+			t.Fatalf("single g failed after event %T %v", interrupt, interrupt)
 		}
 		m.cancelFetch()
 	}
@@ -100,8 +95,8 @@ func TestEndpointKeysDoNotLeakThroughDialogs(t *testing.T) {
 		for _, press := range []string{"g", "g", "G"} {
 			m.Update(key(press))
 		}
-		if m.selected != 20 || m.goTopPending {
-			t.Fatal("dialog changed underlying list or armed gg")
+		if m.selected != 20 {
+			t.Fatal("dialog changed underlying list")
 		}
 		if dialog == "help" {
 			if m.helpOffset == 0 {

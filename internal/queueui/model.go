@@ -49,7 +49,6 @@ type Model struct {
 	popup                             bool
 	helpOpen                          bool
 	helpOffset                        int
-	goTopPending                      bool
 	field                             int
 	auto                              bool
 	timer                             uint64
@@ -219,12 +218,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading, cmd = m.loading.Update(msg)
 		return m, cmd
 	case tea.MouseWheelMsg:
-		m.goTopPending = false
 		return m, m.mouseWheel(msg)
-	case tea.MouseClickMsg, tea.MouseReleaseMsg:
-		m.goTopPending = false
 	case tea.WindowSizeMsg:
-		m.goTopPending = false
 		m.width, m.height = msg.Width, msg.Height
 	case tickMsg:
 		if !m.auto || uint64(msg) != m.timer {
@@ -276,8 +271,6 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		m.configNotice = ""
 		key := msg.String()
-		goTop := m.goTopPending
-		m.goTopPending = false
 		if key == "ctrl+c" || (key == "q" && ((!m.popup && !m.preferencesOpen && !m.helpOpen) || m.width < minimumWidth || m.height < minimumHeight)) {
 			m.cancelFetch()
 			return m, tea.Quit
@@ -324,11 +317,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch key {
 		case "g":
-			if goTop {
-				m.jumpLoaded(0)
-			} else {
-				m.goTopPending = true
-			}
+			m.jumpLoaded(0)
 		case "G", "shift+g":
 			m.jumpLoaded(len(m.rows) - 1)
 		case "P", "shift+p":

@@ -335,7 +335,7 @@ class UITerminalTests(unittest.TestCase):
         self.wait_for(b"BODY-FIRST-30")
         self.finish(b"q")
 
-    def test_gg_and_uppercase_g_jump_loaded_endpoints(self):
+    def test_single_g_and_uppercase_g_jump_loaded_endpoints(self):
         self.server.items = [
             {"seq": seq, "id": f"jump-{seq}", "sender": "dev", "recipient": "gm",
              "state": "queued", "created_at": 1792771200000,
@@ -353,9 +353,6 @@ class UITerminalTests(unittest.TestCase):
         os.kill(self.child, signal.SIGWINCH)
         self.wait_for_text(b"3/3")
         self.output.clear()
-        os.write(self.fd, b"g")
-        self.pump(0.2)
-        self.assertNotIn(b"1/3", self.output, "single g must not jump")
         os.write(self.fd, b"g")
         self.pump(0.2)
         self.output.clear()
