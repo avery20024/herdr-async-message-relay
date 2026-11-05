@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestUnmatchedFailurePersistsUnknownAndPreventsDelivery(t *testing.T) {
+func TestUnmatchedFailurePreservesEvidenceButOnlyPendingBlocks(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		for _, otherPending := range []bool{false, true} {
 			t.Run(fmt.Sprintf("enabled=%t/otherPending=%t", enabled, otherPending), func(t *testing.T) {
@@ -56,12 +56,12 @@ func TestUnmatchedFailurePersistsUnknownAndPreventsDelivery(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				allowed(t, m, false)
+				allowed(t, m, !otherPending)
 				apply(t, m, "SessionStart", "")
-				allowed(t, m, false)
+				allowed(t, m, !otherPending)
 				if otherPending {
 					apply(t, m, "PostToolUse", "other")
-					allowed(t, m, false)
+					allowed(t, m, true)
 				}
 			})
 		}

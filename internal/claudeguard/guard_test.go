@@ -39,7 +39,7 @@ func allowed(t *testing.T, m Manager, want bool) {
 }
 func TestQuestionLifecycle(t *testing.T) {
 	m := setup(t)
-	allowed(t, m, false)
+	allowed(t, m, true)
 	apply(t, m, "SessionStart", "")
 	allowed(t, m, true)
 	apply(t, m, "PreToolUse", "q1")
@@ -52,18 +52,19 @@ func TestQuestionLifecycle(t *testing.T) {
 	apply(t, m, "PostToolUse", "q2")
 	allowed(t, m, true)
 	apply(t, m, "SessionEnd", "")
-	allowed(t, m, false)
+	allowed(t, m, true)
 }
 func TestFailureAndMissingCompletionStayBlocked(t *testing.T) {
 	m := setup(t)
 	apply(t, m, "SessionStart", "")
 	apply(t, m, "PreToolUse", "q1")
 	apply(t, m, "PostToolUseFailure", "q1")
+	allowed(t, m, false) // failure 不當作成功完成。
 	apply(t, m, "PostToolUse", "q1")
-	allowed(t, m, false)
+	allowed(t, m, true)
 	apply(t, m, "SessionStart", "")
-	allowed(t, m, false)
-	// 只有新的 session 初始化可清除舊 unknown，沒有逾時放行。
+	allowed(t, m, true)
+	// unknown 本身不擋，只有已觀測 pending 才擋。
 	e := event("SessionStart", "")
 	e.Session = "session-2"
 	if err := m.Apply(t.Context(), "gm", "wC:p5", e); err != nil {
@@ -86,7 +87,7 @@ func TestStaleEventsCannotUnlock(t *testing.T) {
 	}
 	allowed(t, m, false)
 }
-func TestIdentityAndCorruptionFailClosed(t *testing.T) {
+func TestUnavailableIdentityAndObservationDoNotBlock(t *testing.T) {
 	m := setup(t)
 	apply(t, m, "SessionStart", "")
 	for _, v := range [][2]string{{"wC:p6", "session-1"}, {"wC:p5", "session-2"}, {"wC:p5", ""}} {
@@ -94,14 +95,14 @@ func TestIdentityAndCorruptionFailClosed(t *testing.T) {
 		if release != nil {
 			release()
 		}
-		if err == nil {
-			t.Fatal("identity mismatch allowed")
+		if err != nil {
+			t.Fatal("unmatched identity blocked", err)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(m.Dir, "gm", "state.json"), []byte("broken"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	allowed(t, m, false)
+	allowed(t, m, true)
 	if err := m.Apply(t.Context(), "gm", "wC:p5", event("SessionStart", "")); err == nil {
 		t.Fatal("corruption reset")
 	}
@@ -116,7 +117,7 @@ func TestDefaultOffAndExplicitEnableDisable(t *testing.T) {
 	if err := m.Configure(t.Context(), "gm", true); err != nil {
 		t.Fatal(err)
 	}
-	allowed(t, m, false)
+	allowed(t, m, true)
 	if err := m.Configure(t.Context(), "gm", false); err != nil {
 		t.Fatal(err)
 	}
@@ -163,13 +164,13 @@ func TestBadInput(t *testing.T) {
 		}
 	}
 }
-func TestMissingStateDefersAndReenablePreservesObservation(t *testing.T) {
+func TestMissingStateAllowsAndReenablePreservesObservation(t *testing.T) {
 	m := setup(t)
 	apply(t, m, "SessionStart", "")
 	if err := os.Remove(filepath.Join(m.Dir, "gm", "state.json")); err != nil {
 		t.Fatal(err)
 	}
-	allowed(t, m, false)
+	allowed(t, m, true)
 	apply(t, m, "SessionStart", "")
 	if err := m.Configure(t.Context(), "gm", false); err != nil {
 		t.Fatal(err)

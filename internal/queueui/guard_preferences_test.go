@@ -26,6 +26,7 @@ func (g *guardLoader) GuardSettings(context.Context) (deliver.GuardSettings, err
 }
 func (g *guardLoader) SaveGuard(_ context.Context, b bool) (deliver.GuardSettings, error) {
 	g.saves++
+	// 模擬已寫入但回應丟失，不能盲目重送。
 	g.settings.Policy.Enabled = b
 	return g.settings, g.err
 }
@@ -36,54 +37,82 @@ func guardModel(t *testing.T, g *guardLoader) *Model {
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	return m
 }
-
-func TestPreferencesDoNotAccessHiddenGuard(t *testing.T) {
+func TestTeamGuardCtrlPSharedAndEscDraftOnly(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
-		g := &guardLoader{settings: deliver.GuardSettings{ProjectRoot: "/team", Policy: claudeguard.Policy{Version: 1, Enabled: enabled}}, err: errors.New("guard unavailable")}
-		m := guardModel(t, g)
-		// 即使殘留攔截狀態，語言／主題也不可被隱藏設定阻塞或觸發政策儲存。
-		m.guardReady, m.guardDraft = true, !enabled
-		m.guardBusy, m.guardSaving, m.guardUnconfirmed = true, true, true
-		for _, k := range []string{"ctrl+p", "down", "right", "ctrl+r", "enter", "ctrl+p", "esc"} {
-			_, cmd := m.Update(key(k))
-			apply(m, cmd)
+		g := &guardLoader{settings: deliver.GuardSettings{ProjectRoot: "/team", Policy: claudeguard.Policy{Version: 1, Enabled: enabled}}}
+		a, b := guardModel(t, g), guardModel(t, g)
+		_, cmd := a.Update(key("ctrl+p"))
+		apply(a, cmd)
+		if !a.guardReady || a.guardDraft != enabled || g.saves != 0 {
+			t.Fatal("opening did not preserve explicit policy")
 		}
-		if m.preferencesOpen || g.loads != 0 || g.saves != 0 || g.settings.Policy.Enabled != enabled {
-			t.Fatalf("hidden guard accessed: loads=%d saves=%d policy=%v", g.loads, g.saves, g.settings.Policy.Enabled)
+		a.Update(key("down"))
+		a.Update(key("down"))
+		a.Update(key("left"))
+		if a.guardDraft == enabled || g.settings.Policy.Enabled != enabled {
+			t.Fatal("draft wrote policy")
+		}
+		a.Update(key("esc"))
+		if g.saves != 0 {
+			t.Fatal("Esc wrote policy")
+		}
+		_, cmd = a.Update(key("ctrl+p"))
+		apply(a, cmd)
+		a.Update(key("down"))
+		a.Update(key("down"))
+		a.Update(key("left"))
+		_, cmd = a.Update(key("enter"))
+		if !a.guardBusy {
+			t.Fatal("not saving")
+		}
+		apply(a, cmd)
+		if a.preferencesOpen || g.settings.Policy.Enabled == enabled || g.saves != 1 {
+			t.Fatal("save failed")
+		}
+		_, cmd = b.Update(key("ctrl+p"))
+		apply(b, cmd)
+		if b.guardDraft == enabled {
+			t.Fatal("not team shared")
 		}
 		if len(g.calls) != 0 {
-			t.Fatal("preferences fetched history")
+			t.Fatal("settings fetched history")
 		}
 	}
 }
-
-func TestPreferencesNavigationHasOnlyLanguageAndTheme(t *testing.T) {
-	m, _ := ready(t)
-	m.preferencesStore = testStore(t)
-	m.openPreferences()
-	for _, k := range []string{"down", "j", "up", "k"} {
-		before := m.preferenceField
-		m.Update(key(k))
-		if m.preferenceField != 1-before {
-			t.Fatalf("%s selected hidden field: %d", k, m.preferenceField)
-		}
+func TestTeamGuardUnconfirmedSaveRequiresReload(t *testing.T) {
+	g := &guardLoader{settings: deliver.GuardSettings{ProjectRoot: "/team", Policy: claudeguard.Policy{Version: 1, Enabled: true}}}
+	m := guardModel(t, g)
+	_, cmd := m.Update(key("ctrl+p"))
+	apply(m, cmd)
+	m.preferenceField = 2
+	m.cyclePreference(1)
+	g.err = errors.New("connection lost\x1b[2J")
+	_, cmd = m.Update(key("enter"))
+	apply(m, cmd)
+	if m.guardReady || !m.preferencesOpen || !strings.Contains(m.guardError, "unconfirmed") || strings.Contains(m.guardError, "\x1b") {
+		t.Fatal(m.guardError)
 	}
-	m.preferencesKey("right")
-	if m.preferencesDraft.Language != "en" {
-		t.Fatal("language no longer editable")
+	m.cyclePreference(1)
+	_, retryCmd := m.Update(key("enter"))
+	if retryCmd != nil || !m.preferencesOpen {
+		t.Fatal("unconfirmed save claimed success without reload")
 	}
-	m.preferencesKey("down")
-	m.preferencesKey("right")
-	if m.preferencesDraft.Theme != "catppuccin-latte" {
-		t.Fatal("theme no longer editable")
+	if g.saves != 1 {
+		t.Fatal("blind retry")
 	}
-	m.preferencesKey("enter")
-	if m.preferencesOpen || m.preferences.Language != "en" || m.preferences.Theme != "catppuccin-latte" {
-		t.Fatal("local preferences not saved")
+	g.err = nil
+	_, cmd = m.Update(key("ctrl+r"))
+	apply(m, cmd)
+	if !m.guardReady || m.guardDraft {
+		t.Fatal("reload failed to observe committed save")
+	}
+	// 舊載入結果不能覆蓋新的團隊草稿。
+	m.guardUpdate(guardMsg{generation: m.guardGeneration - 1, settings: deliver.GuardSettings{Policy: claudeguard.Policy{Enabled: true}}})
+	if m.guardDraft {
+		t.Fatal("stale result overwrote policy")
 	}
 }
-
-func TestLocalErrorsFitMinimumTerminal(t *testing.T) {
+func TestGuardAndLocalErrorsFitMinimumTerminal(t *testing.T) {
 	for _, width := range []int{20, 39, 40, 60, 100} {
 		for _, height := range []int{10, 11, 18, 30} {
 			m, _ := ready(t)
@@ -91,6 +120,7 @@ func TestLocalErrorsFitMinimumTerminal(t *testing.T) {
 			m.preferencesOpen = true
 			m.preferencesDraft = m.preferences
 			m.configError = "local preferences unreadable"
+			m.guardError = "team save unconfirmed"
 			lines := strings.Split(ansi.Strip(m.View().Content), "\n")
 			if len(lines) != height {
 				t.Fatalf("%dx%d rendered %d rows", width, height, len(lines))
@@ -101,5 +131,21 @@ func TestLocalErrorsFitMinimumTerminal(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+func TestUnavailableGuardDoesNotWriteDefaults(t *testing.T) {
+	m, _ := ready(t)
+	m.preferencesStore = testStore(t)
+	_, cmd := m.Update(key("ctrl+p"))
+	apply(m, cmd)
+	if m.guardReady {
+		t.Fatal("missing API claimed ready")
+	}
+	m.preferenceField = 2
+	m.cyclePreference(1)
+	_, cmd = m.Update(key("enter"))
+	apply(m, cmd)
+	if m.preferencesOpen {
+		t.Fatal("unavailable team API blocked local preferences")
 	}
 }

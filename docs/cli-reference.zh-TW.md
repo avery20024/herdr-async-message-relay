@@ -8,7 +8,7 @@
 
 目前為早期版本，支援 macOS／Linux 的 arm64 與 amd64，Herdr 相容基準為 **0.9.3**，不支援 Windows。
 
-**角色探索：**agent 的絕對 foreground_cwd 與 root 解析符號連結後，要求既存目錄嚴格位於 root 內；root 本身、相對／不存在路徑及越界一律排除。不要求固定語言目錄、不退回 shell cwd、不作目錄排名。**尚未發布的分頁路由（v0.8.1 未包含）：**以 tab_id 關聯 herdr agent list／herdr tab list，只去除開頭 `[n] ` 顯示序號，依有效分頁名稱 > 有效 agent 名稱 > 實體前景目錄 basename 定址。高順位名稱取代低順位名稱，不新增別名。分頁查詢失敗／格式錯誤、重複 tab_id 或關聯分頁消失時，本輪探索保守失敗，下輪重查；舊 Herdr 無 tab_id 保留 agent／目錄方式。同 CWD 不同完整分頁名稱可多席獨立收信，建議一分頁一席收信 AI。相同完整地址即使只有一席 idle 仍拒絕；pane／序號無效也不投遞。名稱以 Unicode 字母開頭，後續為字母、組合符號、數字、底線或連字號，最多 64 UTF-8 bytes；不接受空白／分隔符／控制字元，精確比對、不做 Unicode 正規化或同形字辨識。修改有效分頁／agent 名稱會改變地址；僅目錄備援時進入子目錄才影響地址。發送身份為明確宣告而非認證，離線合法地址可先入列、不要求預建個別目錄。使用可信任 root 與唯一身份；探索不偽造 Claude ready。須另核對 worker 版本及服務切換，僅更新 CLI 不會替換舊 worker。
+**角色探索：**agent 的絕對 foreground_cwd 與 root 解析符號連結後，要求既存目錄嚴格位於 root 內；root 本身、相對／不存在路徑及越界一律排除。不要求固定語言目錄、不退回 shell cwd、不作目錄排名。**v0.8.2 分頁路由（v0.8.1 未包含）：**以 tab_id 關聯 herdr agent list／herdr tab list，只去除開頭 `[n] ` 顯示序號，依有效分頁名稱 > 有效 agent 名稱 > 實體前景目錄 basename 定址。高順位名稱取代低順位名稱，不新增別名。分頁查詢失敗／格式錯誤、重複 tab_id 或關聯分頁消失時，本輪探索保守失敗，下輪重查；舊 Herdr 無 tab_id 保留 agent／目錄方式。同 CWD 不同完整分頁名稱可多席獨立收信，建議一分頁一席收信 AI。相同完整地址即使只有一席 idle 仍拒絕；pane／序號無效也不投遞。名稱以 Unicode 字母開頭，後續為字母、組合符號、數字、底線或連字號，最多 64 UTF-8 bytes；不接受空白／分隔符／控制字元，精確比對、不做 Unicode 正規化或同形字辨識。修改有效分頁／agent 名稱會改變地址；僅目錄備援時進入子目錄才影響地址。發送身份為明確宣告而非認證，離線合法地址可先入列、不要求預建個別目錄。使用可信任 root 與唯一身份；探索不偽造 Claude ready。須另核對 worker 版本及服務切換，僅更新 CLI 不會替換舊 worker。
 
 Guard 設定 API 的角色清單來自即時座位與既有觀測，不掃描固定目錄。探索失敗以 `discovery_error` 呈現，UI 會提示清單可能不完整，但不阻止緊急關閉攔截政策。
 
@@ -211,6 +211,12 @@ hrelay --lang auto --help
 送出成功／狀態／服務／安裝輸出仍是機器可讀 JSON，欄位、狀態值、ID 與 API 錯誤保持不變。訊息原文不翻譯；daemon 日誌與 AI 封套固定英文。OS／Go／Herdr 診斷及原始 API 錯誤證據保留，不進行機器翻譯。可選 Bash wrapper 自己的診斷不屬於原生 CLI 語系範圍。
 
 語系為**每次 CLI 呼叫的偏好**，不是持久化的專案或收件角色設定。不變更服務登記、不要求 daemon 重啟，也不恢復暫停的佇列。需要一致偏好時，請在 agent 啟動前設定環境；在另一個終端 export 不會更新既有行程。
+
+## Claude 問答觀測（v0.8.2）
+
+啟用額外攔截時，只有已觀測到配對身份的 AskUserQuestion 開始、尚未配對完成才擋。沒有 Hook／SessionStart 或觀測不可用時，退回 Herdr 判斷；缺事件可能漏攔，明確政策損毀仍報錯。此行為不同於已發布 v0.8.1。
+
+`hrelay --root /absolute/test-team claude-run --role ROLE --pane ACTUAL_PANE -- claude [ARGS...]` 記錄啟動時間與隨機世代，再 exec 已授權的命令並提供匹配 Hook 環境。所有重啟（含同 Claude session resume）皆須經此包裝器，舊世代事件才不會污染新問答。此命令不安裝 Hook、不啟動 worker，也不構成模型使用授權；未採用時無法可靠識別同 session 重啟。詳見[接線、fail-open 取捨與復原](claude-question-guard.md)。
 
 ## 範例：自動 rename 後仍保留角色身分
 

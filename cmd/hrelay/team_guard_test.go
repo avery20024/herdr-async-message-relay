@@ -41,13 +41,13 @@ func TestOffRecorderErrorWarnsWithoutBlockingQuestion(t *testing.T) {
 	if err := m.ConfigureTeam(t.Context(), false); err != nil {
 		t.Fatal(err)
 	}
-	// 刻意沒有 SessionStart，事件無法保存，關閉攔截時只能告警，不能冒稱記錄成功。
+	// 刻意缺少開始事件，結束事件無法保存；只告警，不阻止Claude。
 	input, err := os.CreateTemp(t.TempDir(), "event")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer input.Close()
-	if _, err = input.WriteString(`{"hook_event_name":"PreToolUse","session_id":"s","tool_name":"AskUserQuestion","tool_use_id":"q"}`); err != nil {
+	if _, err = input.WriteString(`{"hook_event_name":"PostToolUse","session_id":"s","tool_name":"AskUserQuestion","tool_use_id":"q"}`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = input.Seek(0, 0); err != nil {
@@ -60,7 +60,7 @@ func TestOffRecorderErrorWarnsWithoutBlockingQuestion(t *testing.T) {
 	stderr := captureOutput(t, &os.Stderr, func() {
 		runErr = run(t.Context(), []string{"--root", c.Root, "claude-hook", "--role", "gm", "--pane", "wC:p5"})
 	})
-	if runErr != nil || !strings.Contains(stderr, "recording failed") {
+	if runErr != nil || !strings.Contains(stderr, "observation unavailable") {
 		t.Fatal(runErr, stderr)
 	}
 }

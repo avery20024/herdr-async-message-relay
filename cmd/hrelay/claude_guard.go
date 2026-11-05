@@ -65,14 +65,17 @@ func runClaudeGuard(ctx context.Context, root string, args []string, hook bool) 
 		if err != nil {
 			return err
 		}
-		// 不回傳 permissionDecision，也不輸出任何答案或問題本文。
+		event.RunID = os.Getenv("HRELAY_CLAUDE_RUN_ID")
+		// 不回傳 permissionDecision；觀測無法寫入只警告，不因缺觀測阻止問答。
 		if err := m.Apply(ctx, *role, *pane, event); err != nil {
-			// 明確關閉攔截時記錄失敗只告警，不再以 Hook 失敗阻止問答工具。
-			if p, policyErr := m.TeamPolicy(); policyErr == nil && !p.Enabled {
-				fmt.Fprintln(os.Stderr, "hrelay: question recording failed; interception is off:", err)
-				return nil
+			if errors.Is(err, claudeguard.ErrInvalidEvent) {
+				return err
 			}
-			return err
+			if _, policyErr := m.TeamPolicy(); policyErr != nil {
+				return policyErr
+			}
+			fmt.Fprintln(os.Stderr, "hrelay: question observation unavailable; continuing without additional interception:", err)
+			return nil
 		}
 		return nil
 	}

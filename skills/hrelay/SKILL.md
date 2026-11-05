@@ -11,7 +11,7 @@ Use the installed **native `hrelay` command**. A project-specific forwarding scr
 
 Your launch environment must supply:
 
-- `DELIVER_ROOT`: absolute relay root. Actual agent `foreground_cwd` directories must resolve strictly inside it. Unreleased tab routing joins agent/tab lists by tab_id and uses valid tab label (without `[n] ` prefix), then agent name, then foreground basename; no fixed directory language. This requires the supporting worker and is not in v0.8.1.
+- `DELIVER_ROOT`: absolute relay root. Actual agent `foreground_cwd` directories must resolve strictly inside it. v0.8.2 tab routing joins agent/tab lists by tab_id and uses valid tab label (without `[n] ` prefix), then agent name, then foreground basename; no fixed directory language. This requires the supporting worker and is not in v0.8.1.
 - `HERDR_RELAY_FROM`: your actual stable sender role, supplied by the team launcher. Alternatively pass an explicitly authorized `--from ROLE`.
 - `HERDR_SOCKET_PATH`: Herdr's absolute socket path for first service registration, normally inherited inside a Herdr pane.
 - Any custom `DELIVER_STATE_DIR` / `HERDR_RELAY_SERVICE_HOME` consistently across the caller and startup hook.

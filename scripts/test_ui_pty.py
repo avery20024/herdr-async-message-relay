@@ -22,8 +22,10 @@ from urllib.parse import parse_qs, urlsplit
 
 class UIHandler(http.server.BaseHTTPRequestHandler):
     def guard_response(self):
+        # 強制先畫Loading再回應，覆蓋非同步局部重畫的測試時序。
+        time.sleep(getattr(self.server, "guard_response_delay", 0))
         body = json.dumps({"project_root": self.server.root,
-                           "policy": {"version": 1, "enabled": self.server.guard_enabled.get(self.server.root, True)},
+                           "policy": {"version": 1, "enabled": self.server.guard_enabled.get(self.server.root, False)},
                            "observations": [{"role": "gm", "status": "uninitialized", "pending_count": 0}]}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -247,7 +249,7 @@ class UITerminalTests(unittest.TestCase):
         self.output.clear()
         os.write(self.fd, b"?")
         # 說明關閉後footer完整重繪；草稿內容仍由下方實際保存值核對。
-        self.wait_for_text(b"Preferences 2/2")
+        self.wait_for_text(b"Preferences 2/3")
         self.assertFalse(self.preferences.exists())
         os.write(self.fd, b"\r")
         self.pump(0.3)
@@ -590,27 +592,34 @@ class UITerminalTests(unittest.TestCase):
         self.assertEqual(self.preferences.read_text(), "invalid preferences")
         self.finish(b"\x03")
 
-    def test_hidden_team_guard_preferences_do_not_access_policy(self):
+    def test_team_guard_default_toggle_cancel_and_reload(self):
+        self.server.guard_response_delay = 0.2
         self.launch()
         count = len(self.server.requests)
-        self.server.guard_enabled[self.server.root] = True
-        os.write(self.fd, b"\x10")
-        self.wait_for_text(b"Preferences 1/2")
-        os.write(self.fd, b"j")
+
+        def open_guard(expected):
+            # 每次只看新輸出；Loading→Off/On可僅重畫值，不要求重送整列。
+            self.output.clear()
+            os.write(self.fd, b"\x10")
+            self.wait_for_text(b"Claude interception (global):")
+            self.wait_for_text(expected)
+
+        open_guard(b"Off")
+        os.write(self.fd, b"jj\x1b[C")  # 第三欄開啟草稿。
         self.pump(0.2)
-        os.write(self.fd, b"j")
+        os.write(self.fd, b"\x1b")
         self.pump(0.2)
-        for text in (b"Claude interception", b"Question timing is recorded", b"If delivery stalls"):
-            self.assertNotIn(text, bytes(self.output))
-        os.write(self.fd, b"\x12\r")  # 重載及儲存僅處理本機偏好。
-        self.pump(0.3)
-        self.assertTrue(self.preferences.exists())
+        self.assertNotIn(self.server.root, self.server.guard_enabled)
+        self.assertFalse(any(method == "PUT" for method, _ in self.server.guard_requests))
+        open_guard(b"Off")
+        os.write(self.fd, b"jj\x1b[C\r")
+        self.wait_for_text(b"Preferences saved.")
         self.assertIs(self.server.guard_enabled[self.server.root], True)
-        self.assertEqual(self.server.guard_requests, [])
-        self.assertEqual(len(self.server.requests), count)
-        os.write(self.fd, b"\x10\x1b")
+        self.assertEqual(sum(method == "PUT" for method, _ in self.server.guard_requests), 1)
+        self.assertEqual(len(self.server.requests), count, "policy editing must not fetch message history")
+        open_guard(b"On")
+        os.write(self.fd, b"\x1b")
         self.pump(0.2)
-        self.assertEqual(self.server.guard_requests, [])
         self.finish(b"\x03")
 
     def test_ctrl_c_restores_terminal(self):

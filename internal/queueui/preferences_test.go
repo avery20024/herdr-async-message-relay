@@ -92,7 +92,7 @@ func TestPreferencesNoticeCannotHidePopupLabels(t *testing.T) {
 				if width >= 120 {
 					want := m.text("Filters") + " 1/3"
 					if prefs {
-						want = m.text("Preferences") + " 1/2"
+						want = m.text("Preferences") + " 1/3"
 					}
 					if !strings.Contains(footer, want) {
 						t.Fatal("missing popup position", want, footer)

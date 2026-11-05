@@ -21,15 +21,23 @@ var panePattern = regexp.MustCompile(`^w[0-9A-Za-z]+:p[0-9A-Za-z]+$`)
 
 const maxRecord = 64 * 1024
 
-type Manager struct{ Dir string }
+type Manager struct {
+	Dir           string
+	OnUnavailable func(error)
+}
+
+var ErrInvalidEvent = errors.New("invalid Claude hook event")
+
 type State struct {
-	Session   string           `json:"session_id"`
-	Pane      string           `json:"pane_id"`
-	Phase     string           `json:"phase"`
-	Pending   map[string]bool  `json:"pending"`
-	UpdatedAt int64            `json:"updated_at"`
-	Started   map[string]int64 `json:"started_at,omitempty"`
-	Recent    []Question       `json:"recent_questions,omitempty"`
+	RunID        string           `json:"run_id,omitempty"`
+	RunStartedAt int64            `json:"run_started_at,omitempty"`
+	Session      string           `json:"session_id"`
+	Pane         string           `json:"pane_id"`
+	Phase        string           `json:"phase"`
+	Pending      map[string]bool  `json:"pending"`
+	UpdatedAt    int64            `json:"updated_at"`
+	Started      map[string]int64 `json:"started_at,omitempty"`
+	Recent       []Question       `json:"recent_questions,omitempty"`
 }
 
 // Question 只保存生命週期證據，不含問題或答案本文；未觀測到結束時不填耗時。
@@ -96,6 +104,7 @@ func (p *Policy) UnmarshalJSON(data []byte) error {
 }
 
 type Event struct {
+	RunID   string `json:"-"`
 	Name    string `json:"hook_event_name"`
 	Session string `json:"session_id"`
 	Tool    string `json:"tool_name"`
@@ -256,8 +265,8 @@ func (m Manager) Inspect(ctx context.Context, role string) (Policy, State, error
 }
 
 func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
-	if !panePattern.MatchString(pane) || e.Session == "" || len(e.Session) > 256 || len(e.AgentID) > 256 {
-		return errors.New("hook requires valid pane and session")
+	if !panePattern.MatchString(pane) || e.Session == "" || len(e.Session) > 256 || len(e.AgentID) > 256 || len(e.RunID) > 256 {
+		return fmt.Errorf("%w: requires valid pane and session", ErrInvalidEvent)
 	}
 	if e.AgentID != "" && (e.Name == "SessionStart" || e.Name == "SessionEnd") {
 		return nil
@@ -266,10 +275,10 @@ func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
 	case "SessionStart", "SessionEnd":
 	case "PreToolUse", "PostToolUse", "PostToolUseFailure":
 		if e.Tool != "AskUserQuestion" || e.ToolID == "" || len(e.ToolID) > 256 {
-			return errors.New("expected AskUserQuestion tool_use_id")
+			return fmt.Errorf("%w: expected AskUserQuestion tool_use_id", ErrInvalidEvent)
 		}
 	default:
-		return errors.New("unsupported Claude hook event")
+		return fmt.Errorf("%w: unsupported event", ErrInvalidEvent)
 	}
 	dir, err := m.directory(role)
 	if err != nil {
@@ -287,24 +296,46 @@ func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
 		return err
 	}
 	defer release()
+	launch, launchErr := m.readLaunch(dir)
+	if launchErr != nil && !errors.Is(launchErr, os.ErrNotExist) {
+		return launchErr
+	}
+	if launchErr == nil && (e.RunID != launch.ID || pane != launch.Pane) {
+		return errors.New("stale hook harness generation")
+	}
+	if launchErr != nil && e.RunID != "" {
+		return errors.New("missing harness launch record")
+	}
 	var s State
 	err = readJSON(filepath.Join(dir, "state.json"), &s)
+	// 首次觀測 Pre 即建立 pending，不要求先收到 SessionStart。
+	if errors.Is(err, os.ErrNotExist) && e.Name == "PreToolUse" {
+		s = State{Session: e.Session, Pane: pane, RunID: e.RunID, Phase: "ready", Pending: map[string]bool{}, Started: map[string]int64{}}
+		err = nil
+	}
+	// 有可信的新啟動世代時，可取代上一世代狀態；不改寫歷史日誌。
+	if err == nil && s.RunID != e.RunID && (e.Name == "SessionStart" || e.Name == "PreToolUse") {
+		for id := range s.Pending {
+			s.finishQuestion(id, "interrupted", false)
+		}
+		s = State{Session: e.Session, Pane: pane, RunID: e.RunID, Phase: "ready", Pending: map[string]bool{}, Started: map[string]int64{}, Recent: s.Recent}
+	}
 	if e.Name == "SessionStart" {
 		// 同一 session 的 resume／compact 不是問答結束證據，保留原有阻擋。
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if err != nil || s.Session != e.Session || s.Pane != pane {
+		if err != nil || s.Session != e.Session || s.Pane != pane || s.RunID != e.RunID {
 			for id := range s.Pending {
 				s.finishQuestion(id, "interrupted", false)
 			}
-			s = State{Session: e.Session, Pane: pane, Phase: "ready", Pending: map[string]bool{}, Started: map[string]int64{}, Recent: s.Recent}
+			s = State{Session: e.Session, Pane: pane, RunID: e.RunID, Phase: "ready", Pending: map[string]bool{}, Started: map[string]int64{}, Recent: s.Recent}
 		}
 	} else {
 		if err != nil {
 			return err
 		}
-		if s.Session != e.Session || s.Pane != pane {
+		if s.Session != e.Session || s.Pane != pane || s.RunID != e.RunID {
 			return errors.New("stale hook session or pane")
 		}
 		if s.Pending == nil {
@@ -324,6 +355,7 @@ func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
 			}
 			s.Phase = "ended"
 		case "PreToolUse":
+			s.Phase = "ready" // 實際收到開始事件即有問答證據，不靠舊phase判斷。
 			if len(s.Pending) >= 100 && !s.Pending[e.ToolID] {
 				return errors.New("too many pending questions")
 			}
@@ -345,6 +377,9 @@ func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
 			s.Phase = "unknown"
 		}
 	}
+	if launchErr == nil {
+		s.RunStartedAt = launch.StartedAt
+	}
 	s.UpdatedAt = time.Now().UnixMilli()
 	if err := appendEvent(dir, e, pane, s); err != nil {
 		return err
@@ -353,7 +388,7 @@ func (m Manager) Apply(ctx context.Context, role, pane string, e Event) error {
 }
 
 // Acquire 成功時，呼叫方須持鎖直到提交結果已記錄；不是 Claude 原生原子 API。
-// 團隊預設攔截；未接線或未初始化的 Claude 不宣稱已受保護且不放行。
+// 缺少可用觀測不額外攔截；只有當前身份的已觀測 pending 問題才擋。
 func (m Manager) Acquire(ctx context.Context, role, pane, session string) (func(), bool, error) {
 	dir, err := m.directory(role)
 	if err != nil {
@@ -371,24 +406,43 @@ func (m Manager) Acquire(ctx context.Context, role, pane, session string) (func(
 	if !p.Enabled {
 		return teamRelease, false, nil
 	}
-	if err := checkDir(dir); err != nil {
-		teamRelease()
-		return nil, true, fmt.Errorf("Claude hooks not initialized: %w", err)
+	// 即使尚無 state，也持角色鎖至提交結束，與首次 Pre 寫入序列化。
+	if err := prepareDir(dir); err != nil {
+		m.unavailable(err)
+		return teamRelease, true, nil
 	}
 	roleRelease, err := lock(ctx, dir)
 	if err != nil {
-		teamRelease()
-		return nil, true, err
+		m.unavailable(err)
+		return teamRelease, true, nil
 	}
 	release := func() { roleRelease(); teamRelease() }
 	var s State
-	if err = readJSON(filepath.Join(dir, "state.json"), &s); err != nil {
-		release()
-		return nil, true, err
+	if err := readJSON(filepath.Join(dir, "state.json"), &s); err != nil {
+		m.unavailable(err)
+		return release, true, nil
 	}
-	if session == "" || s.Session != session || s.Pane != pane || s.Phase != "ready" || len(s.Pending) != 0 {
+	launch, launchErr := m.readLaunch(dir)
+	if launchErr != nil && !errors.Is(launchErr, os.ErrNotExist) {
+		m.unavailable(launchErr)
+		return release, true, nil
+	}
+	if (launchErr == nil && (launch.Pane != pane || launch.ID != s.RunID)) || (launchErr != nil && s.RunID != "") {
+		return release, true, nil
+	}
+	if session == "" || s.Session != session || s.Pane != pane || s.Phase == "ended" {
+		return release, true, nil
+	}
+	count := 0
+	for _, pending := range s.Pending {
+		// 相同啟動nonce優先於牆鐘，避免時鐘回撥把新問題誤當舊事件。
+		if pending {
+			count++
+		}
+	}
+	if count > 0 {
 		release()
-		return nil, true, fmt.Errorf("Claude guard deferred: phase=%s pending=%d; session and pane must match", s.Phase, len(s.Pending))
+		return nil, true, fmt.Errorf("Claude guard deferred: %d observed pending questions", count)
 	}
 	return release, true, nil
 }

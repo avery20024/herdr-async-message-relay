@@ -89,7 +89,9 @@ func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 		if a.Session.Kind == "id" {
 			session = a.Session.Value
 		}
-		release, guarded, err := (claudeguard.Manager{Dir: filepath.Join(w.Config.StateDir, "claude-guard")}).Acquire(guardCtx, role, a.Pane, session)
+		release, guarded, err := (claudeguard.Manager{Dir: filepath.Join(w.Config.StateDir, "claude-guard"), OnUnavailable: func(err error) {
+			w.logOnce("guard-observation:"+role, "Claude observation unavailable; using Herdr-only gating", "role", role, "error", err)
+		}}).Acquire(guardCtx, role, a.Pane, session)
 		cancel()
 		if err != nil {
 			w.logOnce("guard:"+role, "Claude guard deferred; inspect Hooks or team preferences", "role", role, "error", err)

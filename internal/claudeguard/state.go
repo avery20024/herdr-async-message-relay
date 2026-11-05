@@ -15,7 +15,7 @@ func (s State) validate() error {
 	default:
 		return errors.New("invalid guard state phase")
 	}
-	if len(s.Session) > 256 || s.UpdatedAt <= 0 || len(s.Pending) > 100 {
+	if (s.RunID != "" && s.RunStartedAt <= 0) || len(s.RunID) > 256 || len(s.Session) > 256 || s.UpdatedAt <= 0 || len(s.Pending) > 100 {
 		return errors.New("invalid guard state bounds")
 	}
 	for id, pending := range s.Pending {
