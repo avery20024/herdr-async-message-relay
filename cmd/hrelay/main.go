@@ -40,6 +40,28 @@ func call(ctx context.Context, c deliver.Config, method, path string, input any)
 		return (&net.Dialer{}).DialContext(ctx, "unix", c.Socket())
 	}}}
 	defer client.CloseIdleConnections()
+	if c.IsCore() && path != "/v1/status" {
+		// 即使 --ensure=false，也須先確認 listener 不是舊 Herdr 或另一個 core。
+		req, err := http.NewRequestWithContext(ctx, "GET", "http://unix/v1/status", nil)
+		if err != nil {
+			return err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return readErr
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("core relay binding probe returned HTTP %d", resp.StatusCode)
+		}
+		if err := c.ValidateStatusBinding(body); err != nil {
+			return err
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, method, "http://unix"+path, bytes.NewReader(data))
 	if err != nil {
 		return err
@@ -57,6 +79,11 @@ func call(ctx context.Context, c deliver.Config, method, path string, input any)
 	if resp.StatusCode >= 300 {
 		// API 錯誤原文屬於協定證據，不依 CLI 語系改寫。
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if c.IsCore() && path == "/v1/status" {
+		if err := c.ValidateStatusBinding(body); err != nil {
+			return err
+		}
 	}
 	_, err = os.Stdout.Write(body)
 	return err
@@ -156,18 +183,22 @@ func run(ctx context.Context, args []string) (err error) {
 			return i18n.NewError("serve takes no arguments")
 		}
 		serveCtx := ctx
-		if socket := os.Getenv("HERDR_SOCKET_PATH"); os.Getenv(deliver.ExitWhenHerdrGoneEnv) == "1" && filepath.IsAbs(socket) {
+		socket := os.Getenv("HERDR_SOCKET_PATH")
+		if c.IsCore() {
+			socket = c.CoreSocket
+		}
+		if os.Getenv(deliver.ExitWhenHerdrGoneEnv) == "1" && filepath.IsAbs(socket) {
 			var stop context.CancelFunc
 			serveCtx, stop = context.WithCancel(ctx)
 			defer stop()
 			go deliver.WatchHerdr(serveCtx, socket, 5*time.Second, 6, func() {
-				slog.Default().Info("Herdr socket is gone; stopping relay", "socket", socket)
+				slog.Default().Info("backend socket is gone; stopping relay", "backend", c.BackendName(), "socket", socket)
 				stop()
 			})
 		}
 		return deliver.Serve(serveCtx, c, slog.Default())
 	case "send":
-		from := f.String("from", os.Getenv("HERDR_RELAY_FROM"), "sender role; defaults to HERDR_RELAY_FROM")
+		from := f.String("from", "", "sender hint; verified against caller pwd and live seat")
 		to := f.String("to", "", "recipient role")
 		body := f.String("body", "", "exact message body")
 		key := f.String("key", "", "idempotency key; reuse for network retries")
@@ -191,13 +222,29 @@ func run(ctx context.Context, args []string) (err error) {
 			*key = deliver.NewID("key-")
 		}
 		request := deliver.SendRequest{Sender: *from, Recipient: *to, Body: *body, Key: *key}
-		if short || *ensure {
-			if *from == "" {
-				return i18n.NewError("sender role is required: set HERDR_RELAY_FROM in the agent environment or pass --from; hrelay does not guess roles")
-			}
-			if err := c.Validate(request); err != nil {
-				return err
-			}
+		// 先檢查本文／地址，避免無效請求觸發席位查詢或服務註冊。
+		if request.Sender == "" {
+			request.Sender = "sender"
+		}
+		if err := c.Validate(request); err != nil {
+			return err
+		}
+		cwd, err := os.Getwd()
+		if err != nil {
+			return i18n.Errorf("cannot determine sender pwd: %w", err)
+		}
+		caller := deliver.SenderContext{
+			CWD: cwd, Explicit: *from, Environment: os.Getenv("HERDR_RELAY_FROM"),
+			Legacy: os.Getenv("HERDR_SEND_FROM"), Pane: os.Getenv("HERDR_PANE_ID"),
+			Tab: os.Getenv("HERDR_TAB_ID"), InsideHerdr: os.Getenv("HERDR_ENV") != "",
+		}
+		if c.IsCore() {
+			// backend 已驗證 HC socket／本機 ID；不混入繼承的舊 Herdr pane／tab。
+			caller.Pane, caller.Tab, caller.InsideHerdr = os.Getenv("HC_TERMINAL_ID"), "", false
+		}
+		request.Sender, err = deliver.IdentifySender(ctx, c, caller, c.DeliveryBackend())
+		if err != nil {
+			return err
 		}
 		if *ensure {
 			manager, err := service.New()
@@ -208,7 +255,7 @@ func run(ctx context.Context, args []string) (err error) {
 				return i18n.Errorf("relay startup failed; no message was enqueued: %w", err)
 			}
 		}
-		err := call(ctx, c, "POST", "/v1/messages", request)
+		err = call(ctx, c, "POST", "/v1/messages", request)
 		if err != nil {
 			return i18n.Errorf("send not confirmed; it may already be stored. Inspect status or retry identical content with --key %q: %w", *key, err)
 		}

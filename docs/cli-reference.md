@@ -6,6 +6,8 @@ Use [the UI](ui.md) for everyday history, filters and UI preferences. This refer
 
 ## Current scope
 
+**Unreleased core support:** development builds auto-select core from complete HC terminal context and retain enqueue-first delivery with isolated state/registry. v0.8.2 has no core adapter. Backend selection, `HC_BIN_PATH` / `HC_SOCKET`, namespace rules and the **no automatic core retry** policy are documented in [core-backend.md](core-backend.md). The Herdr routing and Hook details below still describe the legacy backend, not core.
+
 This is an early release for macOS and Linux, arm64 and amd64. The Herdr compatibility baseline is **0.9.3**. Windows is not supported.
 
 **Role discovery:** resolve each agent's absolute `foreground_cwd` and root through symlinks; require an existing directory strictly inside root. Root itself, missing/relative paths and escapes are excluded, regardless of labels. No fixed directory language, shell `cwd` fallback or directory ranking is used. **v0.8.2 tab routing (not in v0.8.1):** join `herdr agent list` to `herdr tab list` by `tab_id`, strip only a leading `[n] ` display prefix, and choose valid tab label > valid agent name > physical foreground basename. A valid higher-priority name replaces the lower ones, not adds aliases. A failed/malformed tab query, duplicate tab_id or missing referenced tab fails discovery closed until the next scan; legacy agents without tab_id retain the previous name/directory behavior. A shared directory with distinct tab names supports multiple independently addressed seats; one receiving agent per tab is recommended. Duplicate complete addresses stay ambiguous even if only one is idle. Invalid pane/sequence metadata is not delivered. Names start with a Unicode letter and continue with letters, marks, digits, `_` or `-`, up to 64 UTF-8 bytes; separators, whitespace and control characters are rejected. Names are exact without Unicode normalization or confusable detection. Renaming a valid tab/agent changes its address; entering a child directory changes it only in directory fallback. Senders are explicit declarations, not authentication; offline addresses can queue without per-address directories. Use a trusted root and unique identities. Discovery never synthesizes Claude ready state. Installing a CLI does not replace a running worker; version and service switching must be verified separately.
@@ -147,6 +149,8 @@ The worker dispatches only to uniquely matched `idle` or `done` agents with a va
 
 ## Send and inspect
 
+**Unreleased:** send now verifies caller-side physical pwd against live foreground directories and unique pane/tab bindings before service Ensure/POST. It rejects contradictory `--from` / `HERDR_RELAY_FROM` / `HERDR_SEND_FROM` declarations; none silently overrides the others. Shared directories need a unique binding; Worktrees use a verified binding, not their basename. Core binds HC_TERMINAL_ID and ignores inherited Herdr pane/tab/context flags. Outside the selected Herdr/core seat, an authorized explicit `--from` retains manual/offline use; environment alone is not enough. Released v0.8.2 does not include this change. See [full sender rules and migration](sender-identity.md).
+
 Set `DELIVER_ROOT` and `HERDR_RELAY_FROM` in each agent's launch environment using its actual identity. For a configured `dev` seat:
 
 ```sh
@@ -157,7 +161,7 @@ hrelay show msg-<id>
 hrelay show batch-<id>
 ```
 
-The body is one literal argument. Flags precede the positional role/body; do not mix them with `--to`/`--body`. Missing sender context is an error, not inferred from chat or a pane id. An already-running seat without configured environment can use `hrelay --root "$TEAM" send --from dev gm 'Report body'` with its actual authorized sender. The original explicit flag form remains supported.
+The body is one literal argument. Flags precede the positional role/body; do not mix them with `--to`/`--body`. A unique live foreground-directory match can identify the sender without an environment hint; never infer it from chat or the text of a pane ID. An already-running seat can use `hrelay --root "$TEAM" send --from dev gm 'Report body'`, but this declaration must agree with its directory/seat and any existing sender hints. The original explicit flag form remains supported.
 
 `accepted: true` means **stored**, not delivered, read, or approved. Reusing a key with the same sender, recipient, and body returns the existing message ID. Reusing it with different content returns a conflict. New or revised reports need a new key.
 
@@ -264,7 +268,7 @@ Without `HERDR_SEND_IDEMPOTENCY_KEY`, the wrapper omits `--key`. Important bound
 
 - Root uses `DELIVER_ROOT` when set, otherwise the script's parent directory. Copy it to `<team-root>/scripts/herdr-send.sh` or provide the intended root explicitly.
 - Sender uses `HERDR_SEND_FROM`, then `HERDR_RELAY_FROM`; missing identity is rejected. It passes `--from` explicitly and never guesses from the current path.
-- Native CLI validation owns name safety; role directories need not be present or online at enqueue time. Unknown recipients remain queued until a matching seat appears.
+- Native CLI owns name safety and sender verification; wrapper `--from` cannot override live evidence or conflicting hints. Recipients need not be online or have per-address directories; unknown recipients remain queued until a matching seat appears.
 - Renaming a valid tab label changes routing; without one, the agent name or foreground basename determines the address.
 - Requires Bash and a compatible native `hrelay` on PATH. No jq, agent discovery in the wrapper, checkout fallback or legacy binary override is used. Wrapper diagnostics are English; this file documents the current wrapper behavior.
 - The body remains one unchanged argument, including newlines; use proper shell quoting. The wrapper neither reads rename-plugin data nor injects keys or direct prompts.
@@ -285,7 +289,7 @@ Foreground settings are read at startup. Managed services snapshot settings at r
 | `DELIVER_RETRY_BACKOFF_MS` | `30000` | Wait before retrying an `uncertain` batch, 0–600000 |
 | `DELIVER_MAX_ATTEMPTS` | `3` | Maximum deliveries per message before it is held for inspection, 1–10 |
 | `DELIVER_ROOT` | Nearest parent with `.hrelay` | Team root; configure explicitly for agents; `--root` overrides it |
-| `HERDR_RELAY_FROM` | None | Actual sender role supplied by the team launcher; `--from` overrides it |
+| `HERDR_RELAY_FROM` | None | Launcher sender hint, verified against pwd/seat; conflicts with `--from` or `HERDR_SEND_FROM` are rejected |
 | `HERDR_RELAY_LANG` | `auto` | Native CLI display language: `auto`, `en`, `zh-TW`; global `--lang` overrides it; not saved in service records |
 | `HERDR_RELAY_BIN_DIR` | `$HOME/.local/bin` | Stable CLI installation directory; absolute path; not a project/service setting |
 | `DELIVER_STATE_DIR` | Root-scoped directory below | Explicit state/socket location; clients and daemon must agree |

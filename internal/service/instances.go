@@ -18,7 +18,7 @@ func (m *Manager) ID(c deliver.Config) string { return key(c)[:12] }
 
 func (m *Manager) statusOf(ctx context.Context, r Record) Status {
 	ready, err := m.probe(ctx, r.Config)
-	s := Status{ID: m.ID(r.Config), Root: r.Config.Root, StateDir: r.Config.StateDir, AutoStart: r.AutoStart, Managed: r.Managed, Ready: ready}
+	s := Status{ID: m.ID(r.Config), Root: r.Config.Root, Backend: r.Config.BackendName(), CoreSocket: r.Config.CoreSocket, StateDir: r.Config.StateDir, AutoStart: r.AutoStart, Managed: r.Managed, Ready: ready}
 	if err != nil {
 		s.Error = err.Error()
 	}
@@ -64,14 +64,14 @@ func (m *Manager) find(id string) (Record, error) {
 	return Record{}, i18n.Errorf("instance id %q is ambiguous; use more characters", id)
 }
 
-// sameRootOther 找出同一根目錄、不同狀態目錄的既有登記，避免同專案出現第二個佇列。
+// sameRootOther 同一 root／後端／core socket 只允許一個 state；新舊後端可隔離並存。
 func (m *Manager) sameRootOther(c deliver.Config) (*Record, error) {
 	records, err := m.records()
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range records {
-		if r.Config.Root == c.Root && r.Config.StateDir != c.StateDir {
+		if r.Config.Root == c.Root && r.Config.BackendName() == c.BackendName() && r.Config.CoreSocket == c.CoreSocket && r.Config.StateDir != c.StateDir {
 			return &r, nil
 		}
 	}

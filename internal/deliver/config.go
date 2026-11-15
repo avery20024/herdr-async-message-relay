@@ -26,6 +26,9 @@ type Config struct {
 	// MaxAttempts 是單一訊息允許的投遞次數上限，超過則隔離並告警。
 	MaxAttempts int
 	Herdr       string
+	Backend     string `json:",omitempty"`
+	Core        string `json:",omitempty"`
+	CoreSocket  string `json:",omitempty"`
 }
 
 func EnvInt(name string, fallback, min, max int) (int, error) {
@@ -74,10 +77,17 @@ func LoadConfig(root string) (c Config, err error) {
 		}
 		base = filepath.Join(home, ".local", "state")
 	}
+	if err = c.loadBackend(os.Getenv); err != nil {
+		return
+	}
 	c.StateDir = os.Getenv("DELIVER_STATE_DIR")
 	if c.StateDir == "" {
 		// 保留改名前的儲存位置，讓 hrelay 與既有 daemon 共用原佇列與 socket。
-		c.StateDir = filepath.Join(base, "herdr-deliver", fmt.Sprintf("%x", sha256.Sum256([]byte(c.Root)))[:16])
+		identity, prefix := c.Root, ""
+		if c.IsCore() {
+			identity, prefix = c.Root+"\x00core\x00"+c.CoreSocket, "core-"
+		}
+		c.StateDir = filepath.Join(base, "herdr-deliver", prefix+fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))[:16])
 	}
 	c.StateDir, err = filepath.Abs(c.StateDir)
 	if err != nil {
@@ -108,10 +118,15 @@ func LoadConfig(root string) (c Config, err error) {
 		return
 	}
 	c.CommandTimeout = 10 * time.Second
+	if c.IsCore() {
+		// core 提交結果不明須人工核對，不沿用舊後端的自動重送。
+		c.MaxAttempts = 1
+	}
 	c.Herdr = os.Getenv("HERDR_BIN_PATH")
 	if c.Herdr == "" {
 		c.Herdr = "herdr"
 	}
+	err = c.CheckStateBinding()
 	return
 }
 

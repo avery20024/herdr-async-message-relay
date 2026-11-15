@@ -21,6 +21,14 @@ type GuardSettings struct {
 }
 
 func (a API) guardSettings(w http.ResponseWriter, r *http.Request) {
+	if a.Config.IsCore() {
+		if r.Method == http.MethodPut {
+			apiError(w, http.StatusConflict, "Claude Hook interception is not supported by the core backend; use core blocked-state protection")
+			return
+		}
+		respond(w, 200, GuardSettings{ProjectRoot: a.Config.Root, Policy: claudeguard.Policy{Version: 1}, Observations: []claudeguard.Observation{}, DiscoveryError: "Claude Hook interception is unavailable for core; only core status gating applies"})
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	m := claudeguard.Manager{Dir: filepath.Join(a.Config.StateDir, "claude-guard")}
@@ -44,7 +52,7 @@ func (a API) guardSettings(w http.ResponseWriter, r *http.Request) {
 	names := map[string]bool{}
 	herdr := a.Herdr
 	if herdr == nil {
-		herdr = CLIHerdr{Binary: a.Config.Herdr, Timeout: a.Config.CommandTimeout}
+		herdr = a.Config.DeliveryBackend()
 	}
 	agents, listErr := herdr.List(ctx)
 	if listErr != nil {

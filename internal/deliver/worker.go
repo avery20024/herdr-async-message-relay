@@ -76,6 +76,14 @@ func (w *Worker) clearWarn(key string) {
 }
 
 // Dispatch 同一角色只由一個工作執行；不同角色不因對方忙碌或提交觀測而互等。
+// batchPane 在既有文字欄位保存 core 世代，避免同地址新行程被舊 turn 永久擋住；不是投遞地址。
+func (w *Worker) batchPane(a Agent) string {
+	if w.Config.IsCore() {
+		return a.Pane + "@" + a.Session.Value
+	}
+	return a.Pane
+}
+
 func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 	if a.Status != "idle" && a.Status != "done" {
 		return nil
@@ -83,7 +91,7 @@ func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 	enabled := false
 	// 已有 Claude 觀測卻缺失類型中繼資料時，不能把未知身分當作非 Claude 放行。
 	_, roleGuardErr := os.Lstat(filepath.Join(w.Config.StateDir, "claude-guard", role))
-	if a.Session.Agent == "claude" || (a.Session.Agent == "" && !errors.Is(roleGuardErr, os.ErrNotExist)) {
+	if !w.Config.IsCore() && (a.Session.Agent == "claude" || (a.Session.Agent == "" && !errors.Is(roleGuardErr, os.ErrNotExist))) {
 		guardCtx, cancel := context.WithTimeout(ctx, time.Second)
 		session := ""
 		if a.Session.Kind == "id" {
@@ -126,15 +134,23 @@ func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 			if err := w.Store.SupersedeStale(ctx, last.ID); err != nil {
 				return err
 			}
+			if w.Config.IsCore() {
+				w.Log.Warn("stale core dispatch recovered as uncertain; inspect and resolve", "role", role, "batch", last.ID)
+				return nil
+			}
 			w.Log.Warn("stale dispatch recovered for retry", "role", role, "batch", last.ID)
 		case "uncertain":
+			if w.Config.IsCore() {
+				w.logOnce("uncertain:"+role, "core submission uncertain; inspect and resolve before further delivery", "role", role, "batch", last.ID)
+				return nil
+			}
 			// 重試前先退避，避免每輪掃描重複投遞同一批訊息。
 			if time.Since(time.UnixMilli(last.UpdatedAt)) < w.Config.RetryBackoff {
 				return nil
 			}
 		case "submitted":
 			// 等待狀態序號前進，避免提交後 stale idle 導致同座位連續塞信。
-			if last.Pane == a.Pane && a.Seq != nil && *a.Seq <= last.BaselineSeq {
+			if last.Pane == w.batchPane(a) && a.Seq != nil && *a.Seq <= last.BaselineSeq {
 				return nil
 			}
 		}
@@ -158,7 +174,7 @@ func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 	} else {
 		w.clearWarn("held:" + role)
 	}
-	batch := sqlc.Batch{ID: NewID("batch-"), Recipient: role, Pane: a.Pane, BaselineSeq: *a.Seq, CreatedAt: time.Now().UnixMilli()}
+	batch := sqlc.Batch{ID: NewID("batch-"), Recipient: role, Pane: w.batchPane(a), BaselineSeq: *a.Seq, CreatedAt: time.Now().UnixMilli()}
 	chosen := []sqlc.Message{}
 	for _, m := range messages {
 		if len(chosen) == w.Config.BatchSize {
@@ -180,7 +196,17 @@ func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 		return err
 	}
 	// 先持久記錄 dispatching，才執行外部副作用；任何不明結果保守暫停。
-	err = w.Herdr.Prompt(ctx, a.Pane, RenderBatch(batch.ID, chosen))
+	if w.Config.IsCore() {
+		if backend, ok := w.Herdr.(interface {
+			PromptAgent(context.Context, string, Agent, string) error
+		}); ok {
+			err = backend.PromptAgent(ctx, role, a, RenderBatch(batch.ID, chosen))
+		} else {
+			err = errors.New("core delivery backend unavailable")
+		}
+	} else {
+		err = w.Herdr.Prompt(ctx, a.Pane, RenderBatch(batch.ID, chosen))
+	}
 	state, detail := "submitted", "submission observed; not a read or acceptance receipt"
 	if err != nil {
 		state = "uncertain"

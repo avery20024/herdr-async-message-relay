@@ -121,7 +121,7 @@ func (a API) Handler() http.Handler {
 			apiError(w, 500, "unable to read batches")
 			return
 		}
-		respond(w, 200, map[string]any{"project_root": a.Config.Root, "counts": counts, "messages": messages, "batches": batches, "batch_size": a.Config.BatchSize, "batch_bytes": a.Config.BatchBytes, "poll_ms": a.Config.Poll.Milliseconds()})
+		respond(w, 200, map[string]any{"project_root": a.Config.Root, "backend": a.Config.BackendName(), "core_socket": a.Config.CoreSocket, "counts": counts, "messages": messages, "batches": batches, "batch_size": a.Config.BatchSize, "batch_bytes": a.Config.BatchBytes, "poll_ms": a.Config.Poll.Milliseconds()})
 	})
 	mux.HandleFunc("POST /v1/batches/{id}/resolve", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -191,6 +191,9 @@ func Serve(ctx context.Context, c Config, logger *slog.Logger) error {
 	} else if !os.IsNotExist(e) {
 		return e
 	}
+	if err := c.bindState(); err != nil {
+		return err
+	}
 	s, err := OpenStore(ctx, filepath.Join(c.StateDir, "queue.db"))
 	if err != nil {
 		return err
@@ -222,7 +225,7 @@ func Serve(ctx context.Context, c Config, logger *slog.Logger) error {
 	workerCtx, cancelWorker := context.WithCancel(ctx)
 	defer cancelWorker()
 	workerDone := make(chan struct{})
-	worker := &Worker{Store: s, Config: c, Herdr: CLIHerdr{Binary: c.Herdr, Timeout: c.CommandTimeout}, Log: logger}
+	worker := &Worker{Store: s, Config: c, Herdr: c.DeliveryBackend(), Log: logger}
 	go func() { defer close(workerDone); worker.Run(workerCtx) }()
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.Serve(listener) }()

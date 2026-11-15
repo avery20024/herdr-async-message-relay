@@ -24,6 +24,7 @@ type AgentSession struct {
 }
 
 type Agent struct {
+	Backend       string       `json:"-"`
 	Name          string       `json:"name"`
 	TabID         string       `json:"tab_id"`
 	TabLabel      string       `json:"-"`
@@ -248,7 +249,11 @@ func ResolveAgent(root, role string, agents []Agent) (Agent, error) {
 		return Agent{}, fmt.Errorf("role %s matched %d seats", role, len(matches))
 	}
 	a := matches[0]
-	if !panePattern.MatchString(a.Pane) || a.Seq == nil || *a.Seq < 0 {
+	validAddress := panePattern.MatchString(a.Pane)
+	if a.Backend == "core" {
+		validAddress = coreAddressPattern.MatchString(a.Pane)
+	}
+	if !validAddress || a.Seq == nil || *a.Seq < 0 {
 		return Agent{}, errors.New("invalid pane or missing state_change_seq")
 	}
 	return a, nil

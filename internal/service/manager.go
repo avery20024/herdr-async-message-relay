@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -32,17 +33,20 @@ type Record struct {
 }
 
 type Status struct {
-	ID        string `json:"id,omitempty"`
-	Error     string `json:"error,omitempty"`
-	Root      string `json:"project_root"`
-	StateDir  string `json:"state_dir"`
-	AutoStart bool   `json:"auto_start"`
-	Managed   bool   `json:"managed"`
-	Ready     bool   `json:"ready"`
+	ID         string `json:"id,omitempty"`
+	Error      string `json:"error,omitempty"`
+	Root       string `json:"project_root"`
+	Backend    string `json:"backend"`
+	CoreSocket string `json:"core_socket,omitempty"`
+	StateDir   string `json:"state_dir"`
+	AutoStart  bool   `json:"auto_start"`
+	Managed    bool   `json:"managed"`
+	Ready      bool   `json:"ready"`
 }
 
 type Manager struct {
 	Base, Home, Platform, Executable string
+	RegistryRoot                     string // 新版跨後端檢查入口；Base 仍只列出所選後端。
 	UID                              int
 	Environment                      []string
 	run                              func(context.Context, string, ...string) ([]byte, error)
@@ -67,11 +71,24 @@ func New() (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	registryRoot := base
+	backend, err := deliver.DetectBackend(os.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	if backend.IsCore() {
+		// 舊 tag 的 registry reader 不認識 schema 2；多一層避免其 glob 讀到新記錄。
+		base = filepath.Join(base, "core")
+	}
+	base, err = filepath.Abs(base)
+	if err != nil {
+		return nil, err
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
-	return &Manager{Base: base, Home: home, Platform: runtime.GOOS, Executable: executable,
+	return &Manager{Base: base, RegistryRoot: registryRoot, Home: home, Platform: runtime.GOOS, Executable: executable,
 		UID: os.Getuid(), Environment: os.Environ(), run: run, probe: probe, wait: 8 * time.Second}, nil
 }
 
@@ -109,20 +126,22 @@ func probe(ctx context.Context, c deliver.Config) (bool, error) {
 	if resp.StatusCode != http.StatusOK {
 		return false, i18n.Errorf("existing relay returned HTTP %d; refusing takeover", resp.StatusCode)
 	}
-	var body struct {
-		Root string `json:"project_root"`
+	body, err := io.ReadAll(http.MaxBytesReader(nil, resp.Body, 2*1024*1024))
+	if err != nil {
+		return false, err
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(nil, resp.Body, 2*1024*1024)).Decode(&body); err != nil {
-		return false, i18n.Errorf("invalid existing relay response: %w", err)
-	}
-	if body.Root != c.Root {
-		return false, i18n.NewError("existing relay belongs to a different project; refusing takeover")
+	if err := c.ValidateStatusBinding(body); err != nil {
+		return false, err
 	}
 	return true, nil
 }
 
 func key(c deliver.Config) string {
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(c.Root+"\x00"+c.StateDir)))[:24]
+	identity := c.Root + "\x00" + c.StateDir
+	if c.IsCore() {
+		identity += "\x00core\x00" + c.CoreSocket
+	}
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))[:24]
 }
 func (m *Manager) dir(c deliver.Config) string { return filepath.Join(m.Base, key(c)) }
 func (m *Manager) recordPath(c deliver.Config) string {
@@ -209,14 +228,17 @@ func (m *Manager) load(c deliver.Config) (Record, error) {
 	if err := validateRecord(r); err != nil {
 		return r, err
 	}
-	if r.Config.Root != c.Root || r.Config.StateDir != c.StateDir {
+	if r.Config.Root != c.Root || r.Config.StateDir != c.StateDir || r.Config.BackendName() != c.BackendName() || r.Config.CoreSocket != c.CoreSocket {
 		return r, i18n.NewError("service record has an incompatible schema or project binding")
 	}
 	return r, nil
 }
 func validateRecord(r Record) error {
-	if r.Schema != 1 || !filepath.IsAbs(r.Config.Root) || !filepath.IsAbs(r.Config.StateDir) ||
-		!filepath.IsAbs(r.Config.Herdr) || !filepath.IsAbs(r.Environment["HERDR_SOCKET_PATH"]) ||
+	validContext := r.Schema == 1 && (r.Config.Backend == "" || r.Config.Backend == "herdr") && filepath.IsAbs(r.Config.Herdr) && filepath.IsAbs(r.Environment["HERDR_SOCKET_PATH"])
+	if r.Config.IsCore() {
+		validContext = r.Schema == 2 && filepath.IsAbs(r.Config.Core) && filepath.IsAbs(r.Config.CoreSocket) && r.Environment[deliver.BackendEnv] == "core" && r.Environment["HC_SOCKET"] == r.Config.CoreSocket && r.Environment["HC_BIN_PATH"] == r.Config.Core && r.Environment["HC_TERMINAL_ID"] == "" && r.Environment["HC_TERMINAL_SOCKET"] == ""
+	}
+	if !validContext || !filepath.IsAbs(r.Config.Root) || !filepath.IsAbs(r.Config.StateDir) ||
 		r.Config.BatchSize < 1 || r.Config.BatchSize > 100 || r.Config.BatchBytes < 2048 || r.Config.BatchBytes > 64000 ||
 		r.Config.Poll < 50*time.Millisecond || r.Config.Poll > time.Minute {
 		return i18n.NewError("invalid service schema, settings or Herdr context binding")
@@ -244,6 +266,28 @@ func (m *Manager) newRecord(c deliver.Config) (Record, error) {
 			env[name] = value
 		}
 	}
+	if c.IsCore() {
+		if !filepath.IsAbs(c.CoreSocket) {
+			return Record{}, i18n.NewError("core service requires an absolute socket")
+		}
+		binary, err := exec.LookPath(c.Core)
+		if err != nil {
+			return Record{}, i18n.Errorf("cannot locate hc: %w", err)
+		}
+		c.Core, err = filepath.Abs(binary)
+		if err != nil {
+			return Record{}, err
+		}
+		delete(env, "HERDR_SOCKET_PATH")
+		delete(env, "HERDR_CONFIG_PATH")
+		env["HOME"], env[deliver.BackendEnv] = m.Home, "core"
+		env["HC_SOCKET"], env["HC_BIN_PATH"] = c.CoreSocket, c.Core
+		env["DELIVER_STATE_DIR"] = c.StateDir
+		env["DELIVER_BATCH_SIZE"] = strconv.Itoa(c.BatchSize)
+		env["DELIVER_BATCH_BYTES"] = strconv.Itoa(c.BatchBytes)
+		env["DELIVER_POLL_MS"] = strconv.FormatInt(c.Poll.Milliseconds(), 10)
+		return Record{Schema: 2, Config: c, Environment: env, AutoStart: true}, nil
+	}
 	if !filepath.IsAbs(env["HERDR_SOCKET_PATH"]) {
 		return Record{}, i18n.NewError("first service setup requires an absolute HERDR_SOCKET_PATH; run from a Herdr pane or set its socket explicitly")
 	}
@@ -270,10 +314,51 @@ func (m *Manager) newRecord(c deliver.Config) (Record, error) {
 }
 
 func (m *Manager) checkContext(r Record) error {
+	env := map[string]string{}
 	for _, item := range m.Environment {
-		if name, value, ok := strings.Cut(item, "="); ok && name == "HERDR_SOCKET_PATH" && value != "" {
-			if stored := r.Environment[name]; value != stored {
-				return i18n.NewError("project is registered to a different Herdr socket; refusing takeover")
+		if name, value, ok := strings.Cut(item, "="); ok {
+			env[name] = value
+		}
+	}
+	choice := env[deliver.BackendEnv]
+	hasCore := choice == "core" || (choice != "herdr" && (env["HC_TERMINAL_ID"] != "" || env["HC_TERMINAL_SOCKET"] != "" || env["HC_SOCKET"] != ""))
+	if hasCore || (choice != "" && choice != "auto" && choice != "herdr") {
+		context, err := deliver.DetectBackend(func(name string) string { return env[name] })
+		if err != nil {
+			return err
+		}
+		if !r.Config.IsCore() || context.CoreSocket != r.Config.CoreSocket {
+			return i18n.NewError("service belongs to a different backend or core socket; refusing takeover")
+		}
+		return nil
+	}
+	if choice == "herdr" || env["HERDR_SOCKET_PATH"] != "" {
+		if r.Config.IsCore() {
+			return i18n.NewError("core service cannot be controlled through a Herdr context")
+		}
+		if socket := env["HERDR_SOCKET_PATH"]; socket != "" && socket != r.Environment["HERDR_SOCKET_PATH"] {
+			return i18n.NewError("project is registered to a different Herdr socket; refusing takeover")
+		}
+	}
+	return nil
+}
+
+// checkRegisteredState 也保護已登記但尚未建 DB 的 state，避免跨後端接管失敗／暫停服務。
+func (m *Manager) checkRegisteredState(c deliver.Config) error {
+	if !c.IsCore() || m.RegistryRoot == "" {
+		// 舊後端不讀 core registry，避免新服務的損壞設定連帶阻擋舊團隊。
+		return nil
+	}
+	for _, base := range []string{m.RegistryRoot, filepath.Join(m.RegistryRoot, "core")} {
+		reader := *m
+		reader.Base = base
+		records, err := reader.records()
+		if err != nil {
+			return err
+		}
+		for _, r := range records {
+			if r.Config.StateDir == c.StateDir && (r.Config.Root != c.Root || r.Config.BackendName() != c.BackendName() || r.Config.CoreSocket != c.CoreSocket) {
+				return i18n.NewError("state directory is already registered to another project, backend or core socket")
 			}
 		}
 	}
@@ -284,6 +369,12 @@ func (m *Manager) checkContext(r Record) error {
 func (m *Manager) Ensure(ctx context.Context, c deliver.Config, resume bool) error {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	if err := c.CheckStateBinding(); err != nil {
+		return err
+	}
+	if err := m.checkRegisteredState(c); err != nil {
+		return err
+	}
 	if info, err := os.Stat(c.Root); err != nil || !info.IsDir() {
 		return i18n.Errorf("registered project root must still be a directory: %s", c.Root)
 	}
@@ -420,7 +511,7 @@ func (m *Manager) Status(ctx context.Context, c deliver.Config) (Status, error) 
 		return Status{}, err
 	}
 	ready, err := m.probe(ctx, c)
-	return Status{ID: m.ID(c), Root: c.Root, StateDir: c.StateDir, AutoStart: r.AutoStart, Managed: r.Managed, Ready: ready}, err
+	return Status{ID: m.ID(c), Root: c.Root, Backend: c.BackendName(), CoreSocket: c.CoreSocket, StateDir: c.StateDir, AutoStart: r.AutoStart, Managed: r.Managed, Ready: ready}, err
 }
 
 func (m *Manager) records() ([]Record, error) {
