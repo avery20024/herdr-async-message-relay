@@ -23,7 +23,7 @@ keys = ["DELIVER_ROOT", "DELIVER_STATE_DIR", "HERDR_RELAY_FROM", "HERDR_PANE_ID"
 print(json.dumps({"args": sys.argv[1:], "context": {k: os.environ.get(k) for k in keys}}))
 ''')
             harness.chmod(0o700)
-            env = dict(os.environ, DELIVER_STATE_DIR=str(root / "state"))
+            env = dict(os.environ, HRELAY_BACKEND="herdr", DELIVER_STATE_DIR=str(root / "state"))
             command = [str(binary), "--root", str(root), "claude-run", "--role", "reviewer",
                        "--pane", "wC:p5", "--", str(harness), "--resume", "same-session"]
             def launch():

@@ -41,6 +41,10 @@ For a configured environment with `DELIVER_ROOT`, just run `hrelay ui` from any 
 
 Per-release changes, routing risks and upgrade cautions are in [docs/releases](docs/releases/). v0.6.0 added pointer-targeted wheel scrolling, pinned muted metadata notices, accented values, and `gg` / `G` jumps to the first / last currently loaded message. See [v0.6.0 changes and upgrade cautions](docs/releases/v0.6.0.md) and [UI controls and preferences](docs/ui.md). For scripts, JSON inspection, first-time service setup, CLI language flags or recovery, see the [CLI operations and advanced reference](docs/cli-reference.md).
 
+## Development: herdr-core backend (unreleased)
+
+Development source can select a **durable hc backend** from a complete `HC_TERMINAL_ID` / `HC_TERMINAL_SOCKET` context. It keeps the enqueue-first interface and isolates core state/services from the existing Herdr backend; incomplete contexts fail without fallback. **Released v0.8.2 does not contain this feature.** Nothing here installs a binary, migrates an old queue, or switches a running worker. See [core configuration, routing, manual uncertainty handling and limits](docs/core-backend.md).
+
 ## Installation
 
 Supports **macOS and Linux, arm64 / amd64**, with **Herdr 0.9.3+**. Install the plugin in Herdr:
@@ -89,7 +93,7 @@ Restart if requested and finish Ubuntu's first-run account setup, then run the *
 
 ## Team root and instances
 
-One team root is one relay instance. The root decides which queue, socket and background service a command talks to, so every command, including `hrelay ui`, must resolve to the same root as the worker.
+For the released Herdr backend, one team root is one relay instance. Development core builds additionally bind the backend/socket and use separate state and registration; the same root can therefore have an isolated instance in each backend. The root decides which queue, socket and background service a command talks to, so every command, including `hrelay ui`, must resolve to the same root as the worker.
 
 There are two ways to tell hrelay the root: set the `DELIVER_ROOT` variable, or place a `.hrelay` marker file in the root so commands run anywhere below it are intercepted from the outside. The variable always wins over the marker.
 
@@ -112,7 +116,7 @@ The `.hrelay` marker contains only a schema version, never a path, so copying it
 
 ## Agent integration
 
-**Unreleased sender verification:** this source now verifies the sending CLI's physical `pwd` against live Herdr foreground directories and pane/tab bindings before ensure or enqueue. `--from`, `HERDR_RELAY_FROM` and `HERDR_SEND_FROM` are checked declarations, not overrides: contradictions and ambiguous shared directories are rejected. Unique directories need no sender hint; shared named seats need a unique pane/tab binding. Verified bindings support Worktree callers without guessing their basenames. Outside Herdr, an explicitly authorized `--from` retains manual/offline use. This is not in released v0.8.2 and does not fix question-time delivery. See [resolution, compatibility and limitations](docs/sender-identity.md).
+**Unreleased sender verification:** this source now verifies the sending CLI's physical `pwd` against live selected-backend foreground directories and seat bindings before ensure or enqueue; core uses HC_TERMINAL_ID, not inherited Herdr pane/tab. `--from`, `HERDR_RELAY_FROM` and `HERDR_SEND_FROM` are checked declarations, not overrides: contradictions and ambiguous shared directories are rejected. Unique directories need no sender hint; shared named seats need a unique pane/tab binding. Verified bindings support Worktree callers without guessing their basenames. Outside the selected Herdr/core seat, an explicitly authorized `--from` retains manual/offline use. This is not in released v0.8.2 and does not fix question-time delivery. See [resolution, compatibility and limitations](docs/sender-identity.md).
 
 Supply the canonical team root and actual sender in each agent's launch environment:
 

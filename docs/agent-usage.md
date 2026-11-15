@@ -1,5 +1,9 @@
 # Native agent command and SOP integration
 
+## Development backend note (unreleased)
+
+The instructions below describe released Herdr behavior. Development builds also support a durable [core backend](core-backend.md): complete HC terminal context auto-selects it, caller/sender remains explicit, old state/services stay isolated, and uncertain core batches require manual resolution rather than automatic replay. In core mode preserve HC context instead of requiring HERDR_SOCKET_PATH; core names are not App tab labels. Released v0.8.2 does not provide this feature, and external wrappers that directly invoke hc still bypass hrelay.
+
 ## The intended interface
 
 ```sh
@@ -56,7 +60,7 @@ Release v0.1.0 does not contain short send syntax or stable CLI installation. In
 
 ## Caller-side sender verification (unreleased)
 
-Released v0.8.2 still trusts sender declarations. This source adds the sending CLI's physical pwd + live foreground directory + unique pane/tab verification before Ensure/POST. All nonempty `--from`, `HERDR_RELAY_FROM` and `HERDR_SEND_FROM` declarations must agree; explicit flags cannot hide a stale environment. Unique observed directories can resolve a sender without a hint. Shared directories need a unique pane/tab binding; verified bindings support repository/Worktree callers, never an arbitrary basename. Herdr discovery/identity conflicts fail before enqueue. Outside Herdr, an authorized explicit `--from` retains manual/offline operation; environment alone does not. See [full rules and migration](sender-identity.md). This is not authentication or a question-delivery fix.
+Released v0.8.2 still trusts sender declarations. This source adds the sending CLI's physical pwd + live foreground directory + unique pane/tab verification before Ensure/POST. All nonempty `--from`, `HERDR_RELAY_FROM` and `HERDR_SEND_FROM` declarations must agree; explicit flags cannot hide a stale environment. Unique observed directories can resolve a sender without a hint. Shared directories need a unique pane/tab binding; verified bindings support repository/Worktree callers, never an arbitrary basename. Selected-backend discovery/identity conflicts fail before enqueue. Core uses HC_TERMINAL_ID and ignores inherited Herdr pane/tab/context flags. Outside the selected Herdr/core seat, an authorized explicit `--from` retains manual/offline operation; environment alone does not. See [full rules and migration](sender-identity.md). This is not authentication or a question-delivery fix.
 
 ## Per-agent context belongs to the team launcher
 

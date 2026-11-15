@@ -41,6 +41,10 @@ hrelay --root "$TEAM" ui
 
 各版本變更、路由風險及升級注意事項見 [發布說明目錄](docs/releases/)。v0.6.0 加入依滑鼠位置分區捲動、左下淡色說明置底、欄位值強調，以及 `gg`／`G` 跳至已載入首尾資料。變更與升級注意事項見 [v0.6.0 發布說明](docs/releases/v0.6.0.md)，完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
 
+## 開發中：herdr-core 後端（尚未發布）
+
+開發版原始碼可依完整 `HC_TERMINAL_ID`／`HC_TERMINAL_SOCKET` 環境選擇 **hc 持久佇列後端**，維持先入列介面，並與舊 Herdr 的 state／服務隔離；標記不完整時拒絕，不跨通道退回。**已發布 v0.8.2 尚無此功能**；原始碼更新不會安裝 binary、搬移舊佇列或切換現有 worker。詳見 [core 設定、路由、不確定提交處理及限制](docs/core-backend.md)。
+
 ## Installation
 
 支援 **macOS／Linux 的 arm64、amd64**，需要 **Herdr 0.9.3 以上**。在 Herdr 安裝插件：
@@ -89,7 +93,7 @@ wsl --install -d Ubuntu
 
 ## 團隊根目錄與實例
 
-一個團隊根目錄對應一個 relay 實例。根目錄決定指令連到哪個佇列、socket 與背景服務，因此每個指令（包含 `hrelay ui`）都必須解析到與 worker 相同的根目錄。
+已發布的 Herdr 後端以一個團隊根目錄對應一個 relay 實例；開發中的 core 版另綁後端／socket 並隔離 state 與服務登記，因此相同 root 可在兩種後端各有獨立實例。根目錄決定指令連到哪個佇列、socket 與背景服務，因此每個指令（包含 `hrelay ui`）都必須解析到與 worker 相同的根目錄。
 
 告知 hrelay 根目錄有兩種方式：設定 `DELIVER_ROOT` 變數，或在根目錄放置 `.hrelay` 標記檔，讓其下任何目錄執行的指令由外層攔截到該根目錄。變數永遠優先於標記檔。
 
@@ -112,7 +116,7 @@ wsl --install -d Ubuntu
 
 ## Agent 整合
 
-**尚未發布的發送身分驗證：**此原始碼已在 Ensure／入列前，使用發送 CLI 自己的實體 `pwd`，交叉核對 Herdr 前景目錄與 pane／tab 綁定。`--from`、`HERDR_RELAY_FROM`、`HERDR_SEND_FROM` 都是待核對宣告，不會互相覆蓋；矛盾或共用目錄歧義時拒送。唯一目錄可不設 sender 提示；具名共用席需唯一 pane／tab，Worktree 可用經查證的席位綁定，不以 basename 猜角色。非 Herdr 環境保留已授權的顯式 `--from` 人工／離線發送。已發布 v0.8.2 尚無此檢查，本變更也不修復問答期間誤投。詳見[解析、相容與限制](docs/sender-identity.md)。
+**尚未發布的發送身分驗證：**此原始碼已在 Ensure／入列前，使用發送 CLI 自己的實體 `pwd`，交叉核對選定後端的前景目錄與席位綁定；core 使用 HC_TERMINAL_ID，不混入繼承的舊 Herdr pane／tab。`--from`、`HERDR_RELAY_FROM`、`HERDR_SEND_FROM` 都是待核對宣告，不會互相覆蓋；矛盾或共用目錄歧義時拒送。唯一目錄可不設 sender 提示；具名共用席需唯一 pane／tab，Worktree 可用經查證的席位綁定，不以 basename 猜角色。非選定 Herdr／core 席位環境保留已授權的顯式 `--from` 人工／離線發送。已發布 v0.8.2 尚無此檢查，本變更也不修復問答期間誤投。詳見[解析、相容與限制](docs/sender-identity.md)。
 
 在各 agent 的啟動環境設定團隊根目錄與實際發送身分：
 

@@ -6,6 +6,8 @@
 
 ## 目前範圍
 
+**core 支援尚未發布：**開發版依完整 HC 終端環境分流，仍先入列，state／registry 與舊後端隔離。v0.8.2 沒有 core adapter。後端選擇、HC_BIN_PATH／HC_SOCKET、分離清單及 **core 不自動重送**等規則見 [core 後端文件](core-backend.md)；下方 Herdr 路由與 Hook 說明仍僅適用舊後端。
+
 目前為早期版本，支援 macOS／Linux 的 arm64 與 amd64，Herdr 相容基準為 **0.9.3**，不支援 Windows。
 
 **角色探索：**agent 的絕對 foreground_cwd 與 root 解析符號連結後，要求既存目錄嚴格位於 root 內；root 本身、相對／不存在路徑及越界一律排除。不要求固定語言目錄、不退回 shell cwd、不作目錄排名。**v0.8.2 分頁路由（v0.8.1 未包含）：**以 tab_id 關聯 herdr agent list／herdr tab list，只去除開頭 `[n] ` 顯示序號，依有效分頁名稱 > 有效 agent 名稱 > 實體前景目錄 basename 定址。高順位名稱取代低順位名稱，不新增別名。分頁查詢失敗／格式錯誤、重複 tab_id 或關聯分頁消失時，本輪探索保守失敗，下輪重查；舊 Herdr 無 tab_id 保留 agent／目錄方式。同 CWD 不同完整分頁名稱可多席獨立收信，建議一分頁一席收信 AI。相同完整地址即使只有一席 idle 仍拒絕；pane／序號無效也不投遞。名稱以 Unicode 字母開頭，後續為字母、組合符號、數字、底線或連字號，最多 64 UTF-8 bytes；不接受空白／分隔符／控制字元，精確比對、不做 Unicode 正規化或同形字辨識。修改有效分頁／agent 名稱會改變地址；僅目錄備援時進入子目錄才影響地址。發送身份為明確宣告而非認證，離線合法地址可先入列、不要求預建個別目錄。使用可信任 root 與唯一身份；探索不偽造 Claude ready。須另核對 worker 版本及服務切換，僅更新 CLI 不會替換舊 worker。
@@ -147,7 +149,7 @@ worker 只會投遞至唯一匹配、具有有效 `state_change_seq` 的 `idle` 
 
 ## 發送與查詢
 
-**尚未發布：**此原始碼在服務 Ensure／POST 前，以 caller 自己的實體 pwd 對照即時前景目錄與唯一 pane／tab 綁定；`--from`、`HERDR_RELAY_FROM`、`HERDR_SEND_FROM` 有矛盾即拒送，不靜默覆蓋。共用目錄須唯一席位綁定；Worktree 用經核對的綁定，不取 basename 猜角色。非 Herdr 環境保留已授權的顯式 `--from` 人工／離線入口，只有環境值不足以使用此例外。已發布 v0.8.2 尚未包含此變更，詳見[完整身分解析與遷移限制](sender-identity.md)。
+**尚未發布：**此原始碼在服務 Ensure／POST 前，以 caller 自己的實體 pwd 對照即時前景目錄與唯一 pane／tab 綁定；`--from`、`HERDR_RELAY_FROM`、`HERDR_SEND_FROM` 有矛盾即拒送，不靜默覆蓋。共用目錄須唯一席位綁定；Worktree 用經核對的綁定，不取 basename 猜角色。core 綁定 HC_TERMINAL_ID，不混入繼承的舊 Herdr pane／tab。非選定 Herdr／core 席位環境保留已授權的顯式 `--from` 人工／離線入口，只有環境值不足以使用此例外。已發布 v0.8.2 尚未包含此變更，詳見[完整身分解析與遷移限制](sender-identity.md)。
 
 在各 agent 的啟動環境設定 `DELIVER_ROOT` 與代表實際角色的 `HERDR_RELAY_FROM`。以已設定的 `dev` 座位為例：
 

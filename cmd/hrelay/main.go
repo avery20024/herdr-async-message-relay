@@ -40,6 +40,28 @@ func call(ctx context.Context, c deliver.Config, method, path string, input any)
 		return (&net.Dialer{}).DialContext(ctx, "unix", c.Socket())
 	}}}
 	defer client.CloseIdleConnections()
+	if c.IsCore() && path != "/v1/status" {
+		// 即使 --ensure=false，也須先確認 listener 不是舊 Herdr 或另一個 core。
+		req, err := http.NewRequestWithContext(ctx, "GET", "http://unix/v1/status", nil)
+		if err != nil {
+			return err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return readErr
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("core relay binding probe returned HTTP %d", resp.StatusCode)
+		}
+		if err := c.ValidateStatusBinding(body); err != nil {
+			return err
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, method, "http://unix"+path, bytes.NewReader(data))
 	if err != nil {
 		return err
@@ -57,6 +79,11 @@ func call(ctx context.Context, c deliver.Config, method, path string, input any)
 	if resp.StatusCode >= 300 {
 		// API 錯誤原文屬於協定證據，不依 CLI 語系改寫。
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if c.IsCore() && path == "/v1/status" {
+		if err := c.ValidateStatusBinding(body); err != nil {
+			return err
+		}
 	}
 	_, err = os.Stdout.Write(body)
 	return err
@@ -156,18 +183,22 @@ func run(ctx context.Context, args []string) (err error) {
 			return i18n.NewError("serve takes no arguments")
 		}
 		serveCtx := ctx
-		if socket := os.Getenv("HERDR_SOCKET_PATH"); os.Getenv(deliver.ExitWhenHerdrGoneEnv) == "1" && filepath.IsAbs(socket) {
+		socket := os.Getenv("HERDR_SOCKET_PATH")
+		if c.IsCore() {
+			socket = c.CoreSocket
+		}
+		if os.Getenv(deliver.ExitWhenHerdrGoneEnv) == "1" && filepath.IsAbs(socket) {
 			var stop context.CancelFunc
 			serveCtx, stop = context.WithCancel(ctx)
 			defer stop()
 			go deliver.WatchHerdr(serveCtx, socket, 5*time.Second, 6, func() {
-				slog.Default().Info("Herdr socket is gone; stopping relay", "socket", socket)
+				slog.Default().Info("backend socket is gone; stopping relay", "backend", c.BackendName(), "socket", socket)
 				stop()
 			})
 		}
 		return deliver.Serve(serveCtx, c, slog.Default())
 	case "send":
-		from := f.String("from", "", "sender hint; verified against caller pwd and Herdr seat")
+		from := f.String("from", "", "sender hint; verified against caller pwd and live seat")
 		to := f.String("to", "", "recipient role")
 		body := f.String("body", "", "exact message body")
 		key := f.String("key", "", "idempotency key; reuse for network retries")
@@ -202,11 +233,16 @@ func run(ctx context.Context, args []string) (err error) {
 		if err != nil {
 			return i18n.Errorf("cannot determine sender pwd: %w", err)
 		}
-		request.Sender, err = deliver.IdentifySender(ctx, c, deliver.SenderContext{
+		caller := deliver.SenderContext{
 			CWD: cwd, Explicit: *from, Environment: os.Getenv("HERDR_RELAY_FROM"),
 			Legacy: os.Getenv("HERDR_SEND_FROM"), Pane: os.Getenv("HERDR_PANE_ID"),
 			Tab: os.Getenv("HERDR_TAB_ID"), InsideHerdr: os.Getenv("HERDR_ENV") != "",
-		}, deliver.CLIHerdr{Binary: c.Herdr, Timeout: c.CommandTimeout})
+		}
+		if c.IsCore() {
+			// backend 已驗證 HC socket／本機 ID；不混入繼承的舊 Herdr pane／tab。
+			caller.Pane, caller.Tab, caller.InsideHerdr = os.Getenv("HC_TERMINAL_ID"), "", false
+		}
+		request.Sender, err = deliver.IdentifySender(ctx, c, caller, c.DeliveryBackend())
 		if err != nil {
 			return err
 		}
