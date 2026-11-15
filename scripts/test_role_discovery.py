@@ -58,8 +58,11 @@ else:
     sys.exit(7)
 ''')
         mock.chmod(0o700)
-        self.env = dict(os.environ, DELIVER_STATE_DIR=str(self.state), HERDR_BIN_PATH=str(mock),
-                        TEST_DISCOVERY_BASE=str(self.base), DELIVER_POLL_MS="50", HERDR_RELAY_FROM="alpha")
+        # 不繼承執行席位的 pane／sender；本套測接收端探索，由外部人工入口入列。
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith(("HERDR_", "DELIVER_", "HRELAY_"))}
+        self.env.update(DELIVER_STATE_DIR=str(self.state), HERDR_BIN_PATH=str(mock),
+                        TEST_DISCOVERY_BASE=str(self.base), DELIVER_POLL_MS="50")
         for key in ("DELIVER_BATCH_SIZE", "DELIVER_BATCH_BYTES", "DELIVER_RETRY_BACKOFF_MS", "DELIVER_MAX_ATTEMPTS"):
             self.env.pop(key, None)
         self.log = (self.base / "worker.log").open("w")
@@ -99,7 +102,7 @@ else:
         self.fail("timed out waiting for isolated worker")
 
     def send(self, role):
-        return self.cli("send", "--ensure=false", role, "isolated test")['id']
+        return self.cli("send", "--from", "test-operator", "--ensure=false", role, "isolated test")['id']
 
     def message_state(self, message_id):
         return self.cli("show", message_id)['state']

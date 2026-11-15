@@ -112,6 +112,8 @@ wsl --install -d Ubuntu
 
 ## Agent 整合
 
+**尚未發布的發送身分驗證：**此原始碼已在 Ensure／入列前，使用發送 CLI 自己的實體 `pwd`，交叉核對 Herdr 前景目錄與 pane／tab 綁定。`--from`、`HERDR_RELAY_FROM`、`HERDR_SEND_FROM` 都是待核對宣告，不會互相覆蓋；矛盾或共用目錄歧義時拒送。唯一目錄可不設 sender 提示；具名共用席需唯一 pane／tab，Worktree 可用經查證的席位綁定，不以 basename 猜角色。非 Herdr 環境保留已授權的顯式 `--from` 人工／離線發送。已發布 v0.8.2 尚無此檢查，本變更也不修復問答期間誤投。詳見[解析、相容與限制](docs/sender-identity.md)。
+
 在各 agent 的啟動環境設定團隊根目錄與實際發送身分：
 
 ```sh

@@ -45,7 +45,7 @@ var helpNotes = []string{
 	"Detailed help: hrelay help COMMAND [SUBCOMMAND] or COMMAND [SUBCOMMAND] --help.",
 	"Global --root and --lang precede the command; send flags precede ROLE MESSAGE.",
 	"Root: --root PATH > DELIVER_ROOT > nearest parent directory containing .hrelay (hrelay init); never the current directory by itself.",
-	"Sender: --from ROLE or HERDR_RELAY_FROM; hrelay never guesses a role.",
+	"Sender: verify caller pwd and live seat; --from and HERDR_RELAY_FROM must agree.",
 	"Language: --lang auto|en|zh-TW > HERDR_RELAY_LANG > LC_ALL / LC_MESSAGES / LANG.",
 	"First service registration needs the inherited absolute HERDR_SOCKET_PATH.",
 	"accepted = durably stored; submitted is not a read or task-acceptance receipt.",

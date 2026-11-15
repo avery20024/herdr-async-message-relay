@@ -112,6 +112,8 @@ The `.hrelay` marker contains only a schema version, never a path, so copying it
 
 ## Agent integration
 
+**Unreleased sender verification:** this source now verifies the sending CLI's physical `pwd` against live Herdr foreground directories and pane/tab bindings before ensure or enqueue. `--from`, `HERDR_RELAY_FROM` and `HERDR_SEND_FROM` are checked declarations, not overrides: contradictions and ambiguous shared directories are rejected. Unique directories need no sender hint; shared named seats need a unique pane/tab binding. Verified bindings support Worktree callers without guessing their basenames. Outside Herdr, an explicitly authorized `--from` retains manual/offline use. This is not in released v0.8.2 and does not fix question-time delivery. See [resolution, compatibility and limitations](docs/sender-identity.md).
+
 Supply the canonical team root and actual sender in each agent's launch environment:
 
 ```sh

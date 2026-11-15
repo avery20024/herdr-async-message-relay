@@ -63,7 +63,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 		"send": {
 			syntax: "send [OPTIONS] ROLE MESSAGE\nsend [OPTIONS] --to ROLE --body MESSAGE",
 			options: []helpOption{
-				{"from", "ROLE", "sender role; defaults to HERDR_RELAY_FROM"},
+				{"from", "ROLE", "sender hint; verified against caller pwd and Herdr seat"},
 				{"to", "ROLE", "recipient role"},
 				{"body", "MESSAGE", "exact message body"},
 				{"key", "KEY", "idempotency key; reuse for network retries"},
@@ -71,7 +71,10 @@ func buildCommandHelpTopics() map[string]commandHelp {
 			},
 			notes: []string{
 				"Flags must precede ROLE MESSAGE; do not mix positional arguments with --to/--body.",
-				"--from defaults to HERDR_RELAY_FROM; valid role names can be queued while seats are offline.",
+				"Caller pwd and live foreground directories identify the sender; shared directories need a unique pane/tab binding.",
+				"--from, HERDR_RELAY_FROM and HERDR_SEND_FROM must agree with the verified identity; conflicts fail before ensure/POST.",
+				"Only outside Herdr, an authorized explicit --from permits manual/offline sending; environment alone does not.",
+				"Recipient seats may be offline; --ensure=false does not bypass sender verification.",
 				"--key defaults to a generated key. On an ambiguous result, reuse the reported key and identical content.",
 				"--ensure defaults to true for ROLE MESSAGE, false for --to/--body. Use --ensure=false to avoid service startup.",
 				"--to and --body have no defaults; provide both in the flag-only form.",

@@ -25,7 +25,7 @@ func TestAgentShortSendEnsuresDaemonWithoutWrapper(t *testing.T) {
 	t.Setenv("HERDR_RELAY_FROM", "dev")
 	t.Setenv("HERDR_RELAY_SERVICE_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("HERDR_BIN_PATH", "/fake/herdr")
+	configureSenderSeat(t, c)
 	t.Setenv("HERDR_SOCKET_PATH", "/fake/herdr.sock")
 	t.Setenv("PATH", t.TempDir())
 	listener, err := net.Listen("unix", c.Socket())
@@ -66,8 +66,11 @@ func TestAgentShortSendEnsuresDaemonWithoutWrapper(t *testing.T) {
 		t.Fatal("explicit manual-daemon mode should skip ensure")
 	}
 	t.Setenv("HERDR_RELAY_FROM", "not-the-sender")
-	if err := run(context.Background(), []string{"send", "--from", "dev", "--ensure=false", "--key", "stable-key", "gm", body}); err != nil {
-		t.Fatal("explicit sender should override launch context", err)
+	if err := run(context.Background(), []string{"send", "--from", "dev", "--ensure=false", "--key", "stable-key", "gm", body}); err == nil {
+		t.Fatal("explicit sender must not hide a conflicting launch context")
+	}
+	if posts.Load() != 2 {
+		t.Fatal("conflicting sender must fail before enqueue")
 	}
 }
 
@@ -95,6 +98,7 @@ func TestShortSendRejectsMissingIdentityAndMixedForms(t *testing.T) {
 
 func TestShortSendAmbiguousResponsePreservesKey(t *testing.T) {
 	c := cliConfig(t)
+	configureSenderSeat(t, c)
 	for _, role := range []string{"dev", "gm"} {
 		if err := os.Mkdir(filepath.Join(c.Root, "角色", role), 0700); err != nil {
 			t.Fatal(err)

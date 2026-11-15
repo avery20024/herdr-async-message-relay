@@ -147,6 +147,8 @@ worker 只會投遞至唯一匹配、具有有效 `state_change_seq` 的 `idle` 
 
 ## 發送與查詢
 
+**尚未發布：**此原始碼在服務 Ensure／POST 前，以 caller 自己的實體 pwd 對照即時前景目錄與唯一 pane／tab 綁定；`--from`、`HERDR_RELAY_FROM`、`HERDR_SEND_FROM` 有矛盾即拒送，不靜默覆蓋。共用目錄須唯一席位綁定；Worktree 用經核對的綁定，不取 basename 猜角色。非 Herdr 環境保留已授權的顯式 `--from` 人工／離線入口，只有環境值不足以使用此例外。已發布 v0.8.2 尚未包含此變更，詳見[完整身分解析與遷移限制](sender-identity.md)。
+
 在各 agent 的啟動環境設定 `DELIVER_ROOT` 與代表實際角色的 `HERDR_RELAY_FROM`。以已設定的 `dev` 座位為例：
 
 ```sh
@@ -157,7 +159,7 @@ hrelay show msg-<id>
 hrelay show batch-<id>
 ```
 
-訊息原文須為單一參數。旗標放在角色／訊息之前，不要混用位置參數與 `--to`／`--body`。缺少 sender 時會報錯，不從對話或 pane ID 猜測。既有座位尚未設定啟動環境時，可用 `hrelay --root "$TEAM" send --from dev gm '報告原文'`，明確宣告實際且已授權的發送身分。原有完整旗標語法仍受支援。
+訊息原文須為單一參數。旗標放在角色／訊息之前，不要混用位置參數與 `--to`／`--body`。唯一的即時前景目錄可在缺少 sender 提示時辨識身分，不從對話或 pane ID 的字串猜測。既有座位可用 `hrelay --root "$TEAM" send --from dev gm '報告原文'` 宣告實際且已授權的身分，但仍須與目錄／席位及既有非空提示一致。原有完整旗標語法仍受支援。
 
 `accepted: true` 表示**已儲存**，不是已投遞、已讀或已核准。相同 key、發送方、接收方與原文會回傳既有 message ID；相同 key 搭配不同內容則衝突。新報告或修訂版應使用新 key。
 
@@ -264,7 +266,7 @@ hrelay --root "$TEAM" send --from dev --key task-123-report-v1 gm '完整報告�
 
 - root 優先使用 `DELIVER_ROOT`，未設定時取腳本所在目錄的上一層。**須先複製到 `<team-root>/scripts/herdr-send.sh`**；直接在本 repo 的 `examples/` 執行會把本 repo 當作 root。
 - sender 優先使用 `HERDR_SEND_FROM`，其次為 `HERDR_RELAY_FROM`，明確傳入 `--from`；缺少身分即拒絕，不從 CWD 猜測。
-- 名稱安全由原生 CLI 統一驗證；合法離線角色可先入列，不要求固定目錄存在，等唯一座位出現才投遞。
+- 名稱安全與發送身分由原生 CLI 驗證；wrapper 的 `--from` 不能覆蓋即時證據或矛盾提示。收件角色可離線，不要求個別目錄，等唯一座位出現才投遞。
 - 修改有效分頁名稱會改變路由；沒有有效分頁名時，依 agent 名稱或 foreground basename 定址，不作舊式 CWD 排名。
 - 需要 Bash，且呼叫座位的 PATH 可找到 `hrelay` v0.2+。不依賴 jq、不探索 plugin、不退回 checkout binary，也不接受舊 `HERDR_RELAY_BIN`／`HERDR_DELIVER_BIN` 覆寫。本版範例診斷採英文。
 - 原文與換行保持單一參數，請正確使用 shell 引號。腳本不注入按鍵，也不直接發送 prompt。
@@ -285,7 +287,7 @@ hrelay --root "$TEAM" send --from dev --key task-123-report-v1 gm '完整報告�
 | `DELIVER_RETRY_BACKOFF_MS` | `30000` | `uncertain` 批次重試前的退避時間，0–600000 |
 | `DELIVER_MAX_ATTEMPTS` | `3` | 單則訊息最多投遞次數，超過即保留待人工查核，1–10 |
 | `DELIVER_ROOT` | 向上最近含 `.hrelay` 的目錄 | 團隊根目錄；agent 應明確設定，`--root` 優先 |
-| `HERDR_RELAY_FROM` | 無 | launcher 提供的實際發送角色，`--from` 優先 |
+| `HERDR_RELAY_FROM` | 無 | launcher 提供的身分提示，與 pwd／席位核對；和 `--from`／`HERDR_SEND_FROM` 矛盾時拒送 |
 | `HERDR_RELAY_LANG` | `auto` | 原生 CLI 提示語系：`auto`、`en`、`zh-TW`；全域 `--lang` 優先，不寫入服務紀錄 |
 | `HERDR_RELAY_BIN_DIR` | `$HOME/.local/bin` | 原生 CLI 安裝絕對目錄，不是專案／服務設定 |
 | `DELIVER_STATE_DIR` | 下列依 root 區分的目錄 | 明確 state／socket 位置，client 與 daemon 須一致 |

@@ -16,6 +16,11 @@ import (
 
 func cliConfig(t *testing.T) deliver.Config {
 	t.Helper()
+	// 測試不得沿用執行席位的 Herdr／sender，也不可查詢正式 Herdr。
+	for _, key := range []string{"HERDR_ENV", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_RELAY_FROM", "HERDR_SEND_FROM"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("HERDR_BIN_PATH", filepath.Join(t.TempDir(), "no-herdr"))
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "角色"), 0700); err != nil {
 		t.Fatal(err)

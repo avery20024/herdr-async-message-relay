@@ -54,6 +54,10 @@ hrelay version
 
 Release v0.1.0 does not contain short send syntax or stable CLI installation. Install v0.2.0 or newer before using these examples; a v0.1.0 binary cannot substitute for the native short-command interface.
 
+## Caller-side sender verification (unreleased)
+
+Released v0.8.2 still trusts sender declarations. This source adds the sending CLI's physical pwd + live foreground directory + unique pane/tab verification before Ensure/POST. All nonempty `--from`, `HERDR_RELAY_FROM` and `HERDR_SEND_FROM` declarations must agree; explicit flags cannot hide a stale environment. Unique observed directories can resolve a sender without a hint. Shared directories need a unique pane/tab binding; verified bindings support repository/Worktree callers, never an arbitrary basename. Herdr discovery/identity conflicts fail before enqueue. Outside Herdr, an authorized explicit `--from` retains manual/offline operation; environment alone does not. See [full rules and migration](sender-identity.md). This is not authentication or a question-delivery fix.
+
 ## Per-agent context belongs to the team launcher
 
 For a `dev` seat, the launcher should supply this environment **when starting that seat**:
@@ -71,7 +75,7 @@ Already-running agents without these variables can use explicit arguments withou
 hrelay --root /absolute/path/to/team send --from dev gm 'Please inspect the report.'
 ```
 
-The example sender must be replaced with the actual authorized sender. The short form never infers a business role from chat text or from `HERDR_PANE_ID`. A human outside a role seat must explicitly identify an authorized sender and the correct Herdr socket; there is no automatic `human` mailbox.
+The example sender must be replaced with the actual authorized sender and agree with live directory/seat evidence and nonempty environment declarations. Never derive a role from chat text or the text of a pane ID; resolve that binding against the live root-scoped topology. A human outside a role seat must explicitly identify an authorized sender and the correct Herdr socket; there is no automatic `human` mailbox.
 
 If customized, keep `DELIVER_STATE_DIR` and `HERDR_RELAY_SERVICE_HOME` consistent for senders and startup hooks. Otherwise use defaults. Do not relocate a queue merely to make a new command work.
 
@@ -96,7 +100,7 @@ hrelay --root /absolute/path/to/team send --ensure \
   --from dev --to gm --body 'Task report with complete context.'
 ```
 
-`send ROLE MESSAGE` ensures readiness by default; an operator managing a manual foreground daemon can explicitly use `send --ensure=false ROLE MESSAGE`. A missing sender or invalid request fails before service registration.
+`send ROLE MESSAGE` ensures readiness by default; an operator managing a manual foreground daemon can explicitly use `send --ensure=false ROLE MESSAGE`. An unresolved/conflicting sender or invalid request fails before service registration; `--ensure=false` does not disable identity verification.
 
 ## Display language (v0.3.0+)
 
