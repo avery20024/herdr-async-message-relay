@@ -1,6 +1,6 @@
-# Caller-side sender verification (unreleased)
+# Caller-side sender verification (v0.9.0)
 
-This source change is **not in released v0.8.2**. It runs in the sending CLI, before service ensure/registration and POST. It does not require a new database schema or worker API, and does not fix question-time delivery. Updating source files does not change an installed CLI or a running worker.
+**Introduced in v0.9.0; v0.8.2 trusts sender declarations instead.** It runs in the sending CLI, before service ensure/registration and POST. It does not require a new database schema or worker API, and does not fix question-time delivery. Updating source files does not change an installed CLI or a running worker.
 
 ## Inputs and resolution
 

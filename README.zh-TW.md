@@ -37,17 +37,21 @@ hrelay --root "$TEAM" server on
 hrelay --root "$TEAM" ui
 ```
 
-已設定 `DELIVER_ROOT` 的環境可在任何目錄直接執行 `hrelay ui`，詳見[團隊根目錄與實例](#團隊根目錄與實例)。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**預設：**UI 預設每秒自動刷新，缺少 Claude 攔截政策時預設**關閉**，保留既有明確設定。v0.8.2 UI 已恢復 Ctrl+P 實驗性攔截開關與兩行淡化提示（v0.8.1 仍隱藏）；開啟選單不改政策，修改草稿後按 Enter 才儲存；`?` 分為瀏覧、篩選、設置、其他。已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。現行路由與缺省政策需重啟為對應版本的 worker；發布或更新 CLI／UI 不會替換運行中的 worker。較早版本（例如 v0.6.0）缺少政策時預設開啟，升級保留既有明確開啟／關閉設定；**v0.8.2 觀測式攔截：**缺少或無法使用問答觀測時，不再額外擋通知；只有已觀測到配對身份的 PreToolUse、尚未收到該問題 PostToolUse 才擋。新增 `claude-run` 啟動包裝器記錄時間與世代，同 session 重啟後可排除舊 pending／遲到 Hook。v0.8.1 仍採原本嚴格 ready 規則。缺失事件可能漏攔，這是明確接受的 fail-open 取捨，不是完整防護。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
+已設定 `DELIVER_ROOT` 的環境可在任何目錄直接執行 `hrelay ui`，詳見[團隊根目錄與實例](#團隊根目錄與實例)。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**此處 Claude 攔截控制僅適用舊 Herdr，不適用 core。** **預設：**UI 預設每秒自動刷新，缺少 Claude 攔截政策時預設**關閉**，保留既有明確設定。v0.8.2 UI 已恢復 Ctrl+P 實驗性攔截開關與兩行淡化提示（v0.8.1 仍隱藏）；開啟選單不改政策，修改草稿後按 Enter 才儲存；`?` 分為瀏覧、篩選、設置、其他。已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。現行路由與缺省政策需重啟為對應版本的 worker；發布或更新 CLI／UI 不會替換運行中的 worker。較早版本（例如 v0.6.0）缺少政策時預設開啟，升級保留既有明確開啟／關閉設定；**v0.8.2 觀測式攔截：**缺少或無法使用問答觀測時，不再額外擋通知；只有已觀測到配對身份的 PreToolUse、尚未收到該問題 PostToolUse 才擋。新增 `claude-run` 啟動包裝器記錄時間與世代，同 session 重啟後可排除舊 pending／遲到 Hook。v0.8.1 仍採原本嚴格 ready 規則。缺失事件可能漏攔，這是明確接受的 fail-open 取捨，不是完整防護。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
 
 各版本變更、路由風險及升級注意事項見 [發布說明目錄](docs/releases/)。v0.6.0 加入依滑鼠位置分區捲動、左下淡色說明置底、欄位值強調，以及 `gg`／`G` 跳至已載入首尾資料。變更與升級注意事項見 [v0.6.0 發布說明](docs/releases/v0.6.0.md)，完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
 
-## 開發中：herdr-core 後端（尚未發布）
+## v0.9.0：herdr-core 後端
 
-開發版原始碼可依完整 `HC_TERMINAL_ID`／`HC_TERMINAL_SOCKET` 環境選擇 **hc 持久佇列後端**，維持先入列介面，並與舊 Herdr 的 state／服務隔離；標記不完整時拒絕，不跨通道退回。**已發布 v0.8.2 尚無此功能**；原始碼更新不會安裝 binary、搬移舊佇列或切換現有 worker。詳見 [core 設定、路由、不確定提交處理及限制](docs/core-backend.md)。
+v0.9.0 新增 **hc 持久佇列後端**，介面依據 hc **0.1.21**。完整 `HC_TERMINAL_ID`／`HC_TERMINAL_SOCKET` 環境會自動選擇 core，也可明確設定 `HRELAY_BACKEND=core` 與絕對 `HC_SOCKET`。維持先入列，與舊 Herdr 的 state／服務隔離；標記不完整時拒絕，不跨通道退回。**v0.8.2 不支援 core**。CLI 與 worker 都需支援版本；發布或安裝不會切換 worker、搬移佇列或更新外部直接呼叫 hc 的腳本。
+
+core 使用終端 name 而非 App 分頁標籤；結果 uncertain 不自動重送。core 不支援舊 Claude Hook 攔截；v0.9.0 TUI 仍顯示舊控制，可能誤顯示為 Off，不能據此視為有 core 防護。本版不含 herdr-app Mod。詳見 [v0.9.0 變更與升級注意事項](docs/releases/v0.9.0.md)及 [core 設定、路由與限制](docs/core-backend.md)。
 
 ## Installation
 
-支援 **macOS／Linux 的 arm64、amd64**，需要 **Herdr 0.9.3 以上**。在 Herdr 安裝插件：
+支援 **macOS／Linux 的 arm64、amd64**。舊插件後端需 **Herdr 0.9.3 以上**；core 模式依 **herdr-core（hc）0.1.21** 介面，不需要安裝舊 Herdr。core 可從 [Releases](https://github.com/avery20024/herdr-async-message-relay/releases) 下載平台套件、核對 `checksums.txt`，再依 [core 接線文件](docs/core-backend.md)設定。解壓套件不會安裝 App Mod 或啟動 relay。
+
+舊後端在 Herdr 安裝插件：
 
 ```sh
 herdr plugin install avery20024/herdr-async-message-relay
@@ -56,7 +60,7 @@ hrelay version
 
 安裝器下載對應的預編譯執行檔，核對 checksum 與版本，並將穩定指令安裝至 `~/.local/bin/hrelay`。請在**啟動 agent 前**將該目錄加入 PATH，或使用安裝結果提供的絕對路徑；不需要 Go、Python 或 sqlite3 CLI。
 
-### 所需依賴
+### 舊 Herdr 插件安裝依賴
 
 需要 Herdr、Git、`curl`、CA 憑證、`sh`、`tar`、`awk`、`mktemp`，以及 `sha256sum` 或 `shasum`。macOS 已提供一般 Unix 工具與 `shasum`；Debian／Ubuntu 可一次安裝下列套件。這些是安裝範例，不是插件自動執行的指令。
 
@@ -93,7 +97,7 @@ wsl --install -d Ubuntu
 
 ## 團隊根目錄與實例
 
-已發布的 Herdr 後端以一個團隊根目錄對應一個 relay 實例；開發中的 core 版另綁後端／socket 並隔離 state 與服務登記，因此相同 root 可在兩種後端各有獨立實例。根目錄決定指令連到哪個佇列、socket 與背景服務，因此每個指令（包含 `hrelay ui`）都必須解析到與 worker 相同的根目錄。
+Herdr 後端以一個團隊根目錄對應一個 relay 實例；v0.9.0 的 core 模式另綁後端／socket 並隔離 state 與服務登記，因此相同 root 可在兩種後端各有獨立實例。根目錄決定指令連到哪個佇列、socket 與背景服務，因此每個指令（包含 `hrelay ui`）都必須解析到與 worker 相同的根目錄。
 
 告知 hrelay 根目錄有兩種方式：設定 `DELIVER_ROOT` 變數，或在根目錄放置 `.hrelay` 標記檔，讓其下任何目錄執行的指令由外層攔截到該根目錄。變數永遠優先於標記檔。
 
@@ -104,7 +108,9 @@ wsl --install -d Ubuntu
 3. 自當前目錄起向上最近、含有 `hrelay init` 所建立 `.hrelay` 標記檔的目錄
 4. 以上皆無則報錯；hrelay 不會單以當前目錄作為根目錄
 
-**從根目錄到實例：**根目錄會轉為絕對路徑並解開符號連結。狀態目錄為 `$XDG_STATE_HOME/herdr-deliver/<sha256(根目錄) 前 16 位十六進位>`（未設定時為 `~/.local/state`），內含佇列與 `deliver.sock`；可用 `DELIVER_STATE_DIR` 覆寫。受管理的 launchd／systemd 服務以根目錄與狀態目錄的雜湊識別。因此不同根目錄擁有各自獨立的佇列、socket 與服務，同一台機器可並行多個專案；而解析後指向同一目錄的不同路徑則共用同一個實例。若以不同根目錄（例如某個角色子目錄）存取同一專案，會連到另一個空的實例，角色探索也找不到座位。
+**從根目錄到實例（Herdr 後端）：**根目錄會轉為絕對路徑並解開符號連結。狀態目錄為 `$XDG_STATE_HOME/herdr-deliver/<sha256(根目錄) 前 16 位十六進位>`（未設定時為 `~/.local/state`），內含佇列與 `deliver.sock`；可用 `DELIVER_STATE_DIR` 覆寫。受管理的 launchd／systemd 服務以根目錄與狀態目錄的雜湊識別。因此不同根目錄擁有各自獨立的佇列、socket 與服務，同一台機器可並行多個專案；而解析後指向同一目錄的不同路徑則共用同一個實例。若以不同根目錄（例如某個角色子目錄）存取同一專案，會連到另一個空的實例，角色探索也找不到座位。
+
+core 則依 root、後端與 socket 建立獨立 `herdr-deliver/core-<hash>` state 與後端專屬 registry。不要讓舊 binary 指向 core state 或重用舊 DB，詳見 [後端隔離](docs/core-backend.md#isolation-and-compatibility--新舊隔離)。
 
 **常見設定**
 
@@ -116,7 +122,7 @@ wsl --install -d Ubuntu
 
 ## Agent 整合
 
-**尚未發布的發送身分驗證：**此原始碼已在 Ensure／入列前，使用發送 CLI 自己的實體 `pwd`，交叉核對選定後端的前景目錄與席位綁定；core 使用 HC_TERMINAL_ID，不混入繼承的舊 Herdr pane／tab。`--from`、`HERDR_RELAY_FROM`、`HERDR_SEND_FROM` 都是待核對宣告，不會互相覆蓋；矛盾或共用目錄歧義時拒送。唯一目錄可不設 sender 提示；具名共用席需唯一 pane／tab，Worktree 可用經查證的席位綁定，不以 basename 猜角色。非選定 Herdr／core 席位環境保留已授權的顯式 `--from` 人工／離線發送。已發布 v0.8.2 尚無此檢查，本變更也不修復問答期間誤投。詳見[解析、相容與限制](docs/sender-identity.md)。
+**v0.9.0 發送身分驗證：**發送 CLI 在 Ensure／入列前，使用發送 CLI 自己的實體 `pwd`，交叉核對選定後端的前景目錄與席位綁定；core 使用 HC_TERMINAL_ID，不混入繼承的舊 Herdr pane／tab。`--from`、`HERDR_RELAY_FROM`、`HERDR_SEND_FROM` 都是待核對宣告，不會互相覆蓋；矛盾或共用目錄歧義時拒送。唯一目錄可不設 sender 提示；具名共用席需唯一 pane／tab，Worktree 可用經查證的席位綁定，不以 basename 猜角色。非選定 Herdr／core 席位環境保留已授權的顯式 `--from` 人工／離線發送。v0.8.2 尚無此檢查；錯誤或矛盾的啟動提示現在會拒送，屬相容性變更，不是身分認證，也不修復問答期間誤投。詳見[解析、相容與限制](docs/sender-identity.md)。
 
 在各 agent 的啟動環境設定團隊根目錄與實際發送身分：
 
@@ -126,11 +132,11 @@ export HERDR_RELAY_FROM=dev
 hrelay send gm 'Task 123 已備妥，請查核證據。'
 ```
 
-**角色探索：**前景目錄解析符號連結後，必須是嚴格位於 relay root 內的既存目錄。定址依序採有效的**分頁名稱**、Herdr agent 名稱、實體前景目錄 basename；不退回 shell `cwd`、不要求固定語言目錄。worker 以 `tab_id` 關聯 `herdr agent list` 與 `herdr tab list`，只移除 Herdr 的 `[n] ` 顯示序號。拓樸缺漏／無效或完整地址重複時暫緩投遞。名稱以 Unicode 字母開頭，後續允許字母、組合符號、數字、底線或連字號，最多 64 UTF-8 bytes，精確比對、不做 Unicode 正規化。合法離線地址可先入列，不必為每個地址建立目錄。**分頁名稱路由須使用 v0.8.2 worker；v0.8.1 僅支援 agent 名稱／目錄路由。**更新 CLI 或文件不會替換運行中的 worker。詳見 [agent 文件](docs/agent-usage.md)、[skill](skills/hrelay/SKILL.md) 與 [CLI 參考](docs/cli-reference.zh-TW.md)。
+**Herdr 後端角色探索：**前景目錄解析符號連結後，必須是嚴格位於 relay root 內的既存目錄。定址依序採有效的**分頁名稱**、Herdr agent 名稱、實體前景目錄 basename；不退回 shell `cwd`、不要求固定語言目錄。worker 以 `tab_id` 關聯 `herdr agent list` 與 `herdr tab list`，只移除 Herdr 的 `[n] ` 顯示序號。拓樸缺漏／無效或完整地址重複時暫緩投遞。名稱以 Unicode 字母開頭，後續允許字母、組合符號、數字、底線或連字號，最多 64 UTF-8 bytes，精確比對、不做 Unicode 正規化。合法離線地址可先入列，不必為每個地址建立目錄。**分頁名稱路由須使用 v0.8.2 worker；v0.8.1 僅支援 agent 名稱／目錄路由。**更新 CLI 或文件不會替換運行中的 worker。詳見 [agent 文件](docs/agent-usage.md)、[skill](skills/hrelay/SKILL.md) 與 [CLI 參考](docs/cli-reference.zh-TW.md)。
 
 **多席具名座位：**例如分頁 `dispatch-front-login` 與 `dispatch-back-sort` 可共用前景目錄但各自收信。每席 HERDR_RELAY_FROM 與收件地址使用完整名稱，不寄到共用角色類型；每分頁只放一席收信 AI。同一完整地址對應多席時，即使只有一席 idle 仍拒絕，不任選、不廣播。分頁／agent 名稱是路由身份，不是純裝飾；有效分頁名稱覆蓋 agent／目錄名稱，被覆蓋者不再是別名。舊 Herdr 沒有 tab_id 時保留 agent／目錄備援；有 tab_id 但查詢失敗或分頁在兩次快照間消失時，本輪保守不投遞，下輪再探索。
 
-**入列成功不等於已讀。** `accepted: true` 代表已儲存，不是已投遞、已讀或已核准。保留 message ID／冪等 key，不要換新 key 盲目重送。若提交結果無法觀測，worker 會在短暫退避後依 FIFO 重送同一批訊息，最多 `DELIVER_MAX_ATTEMPTS` 次，因此投遞語意為 **at-least-once**；信封保留每則 message ID 供接收端辨識重複，詳見 [復原與投遞語意](docs/cli-reference.zh-TW.md#復原與投遞語意)。
+**入列成功不等於已讀。** `accepted: true` 代表已儲存，不是已投遞、已讀或已核准。保留 message ID／冪等 key，不要換新 key 盲目重送。Herdr 後端若提交結果無法觀測，worker 會在短暫退避後依 FIFO 重送同一批訊息，最多 `DELIVER_MAX_ATTEMPTS` 次，因此投遞語意為 **at-least-once**；信封保留每則 message ID 供接收端辨識重複，core 則在 uncertain 後保留同角色後續訊息，待獲授權操作者核對與 resolve，不自動重送。詳見 [復原與投遞語意](docs/cli-reference.zh-TW.md#復原與投遞語意)及 [core 不確定性處理](docs/core-backend.md)。
 
 ## UI 主題
 

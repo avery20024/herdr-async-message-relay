@@ -1,10 +1,10 @@
-# herdr-core backend / core 投遞後端（未發布／Unreleased）
+# herdr-core backend / core 投遞後端（v0.9.0）
 
 ## Scope and version / 範圍與版本
 
-This describes **development source**, based on the hc **0.1.21** CLI contract ([source c84d6e7](https://github.com/herdrdev/herdr-core/tree/c84d6e76156a6c2aac1da20efbe800f10acfe897)). VERSION is unchanged in this development work: a local `make build` still prints v0.8.2, so that string alone cannot identify this uncommitted source feature. Released **hrelay v0.8.2 does not support core**. Building this checkout does not update an installed CLI or a running worker. Installation, service switching and real-agent acceptance are separate operator actions. No native Windows support or herdr-app Mod is added.
+**v0.9.0 adds the core backend**, based on the hc **0.1.21** CLI contract ([source c84d6e7](https://github.com/herdrdev/herdr-core/tree/c84d6e76156a6c2aac1da20efbe800f10acfe897)). Both the CLI and core worker must support this backend; **hrelay v0.8.2 does not support core**. Building this checkout does not update an installed CLI or a running worker. Installation, service switching and real-agent acceptance are separate operator actions. No native Windows support or herdr-app Mod is added.
 
-本文件描述**開發版原始碼**，介面依據 hc **0.1.21**。已發布的 **hrelay v0.8.2 不支援 core**；建置 checkout 不會更新已安裝 CLI 或運行中的 worker。本次不新增原生 Windows 支援或 App Mod，也不自動安裝、切服務或接管舊佇列。
+**v0.9.0 新增 core 後端**，介面依據 hc **0.1.21**；CLI 與 core worker 都需使用支援版本。**hrelay v0.8.2 不支援 core**；建置 checkout 不會更新已安裝 CLI 或運行中的 worker。本次不新增原生 Windows 支援或 App Mod，也不自動安裝、切服務或接管舊佇列。
 
 ## Backend selection / 後端選擇
 
@@ -45,11 +45,11 @@ The enqueue API never calls hc to wait for the recipient. A configured healthy r
 - **Herdr:** keep the exact legacy state path, root binding, schema-1 service record and registry location. No database migration or healthy worker replacement occurs.
 - **Core default state:** `${XDG_STATE_HOME:-$HOME/.local/state}/herdr-deliver/core-<hash>/`, where hash is the first 16 hex digits of SHA-256 of `canonical_root + NUL + core + NUL + core_socket`.
 - **Core registry:** a `core/` child of the normal service registry (including a custom HERDR_RELAY_SERVICE_HOME). Schema-2 records live below that child, where the old tag reader's one-level glob cannot encounter them. `ps`, ID commands and restore operate within the selected backend registry. They are not a combined inventory of both backends.
-- The core state has a private `backend.json` binding for root/backend/socket, created under the daemon lock before SQLite. An unbound state containing a database is refused by core; a legacy process using this development version refuses a core-bound state. Missing/invalid/conflicting bindings are not repaired automatically.
+- The core state has a private `backend.json` binding for root/backend/socket, created under the daemon lock before SQLite. An unbound state containing a database is refused by core; a v0.9.0 Herdr-backend process refuses a core-bound state. Missing/invalid/conflicting bindings are not repaired automatically.
 - Core OS job IDs also include backend/socket, not just root/state. Core service registration checks both registries for conflicting state ownership, even for a paused/failed registration that has no database yet. Legacy Ensure does not scan the core registry, so a broken core record cannot block the old backend. Default independent paths are strongly preferred; this is not a distributed transaction protecting simultaneously misconfigured manual state overrides.
 - `DELIVER_STATE_DIR` remains an override, but cannot authorize cross-backend or cross-socket takeover. Explicitly reusing an old queue is an error, not migration. A core health probe additionally verifies project/backend/socket; missing backend in an old response is treated as Herdr, never core.
 
-舊 Herdr 的 state、registry 與 schema 1 保留；core 的 state 依 root＋socket 分開，registry 另放一層，避免目前 tag 版的 reader 讀到不認識的新 schema。兩邊可同時使用同一專案 root，但**角色郵箱不是跨後端橋接**，同名 gm 各自屬於不同通道。後端切換不搬訊息；舊 queued／uncertain 留在原處，需另行核對與授權安排。
+舊 Herdr 的 state、registry 與 schema 1 保留；core 的 state 依 root＋socket 分開，registry 另放一層，避免舊 tag 版的 reader 讀到不認識的新 schema。兩邊可同時使用同一專案 root，但**角色郵箱不是跨後端橋接**，同名 gm 各自屬於不同通道。後端切換不搬訊息；舊 queued／uncertain 留在原處，需另行核對與授權安排。
 
 從舊 Herdr／core 各自執行 `hrelay ps --json` 會看到該後端 registry；不能把其中一邊的清單當作全機完整席位或訊息盤點。明確選擇舊後端可使用 `HRELAY_BACKEND=herdr`，但不得偽造 sender 或借此誤投舊同名角色。
 
@@ -106,15 +106,17 @@ For a manually supervised worker outside a core terminal, select the backend exp
 
 ```sh
 HRELAY_BACKEND=core HC_SOCKET=/absolute/core.sock \
-  /absolute/development/hrelay --root /absolute/isolated/team serve
+  /absolute/path/to/hrelay --root /absolute/isolated/team serve
 ```
 
 Do not use shell `&`. Before invoking hc, the adapter checks that the bound socket accepts a connection, so a known-unavailable core is not passed to hc for autostart. A check-to-command race remains: hc itself can autostart on some platforms if core stops immediately afterward ([upstream client behavior](https://github.com/herdrdev/herdr-core/blob/c84d6e76156a6c2aac1da20efbe800f10acfe897/crates/herdr-core/src/client.rs)); this adapter is not an atomic no-autostart protocol. Managed launchd/systemd records preserve their socket; the normal lifecycle watcher follows that core socket, not HERDR_SOCKET_PATH. Closing the App window is not the same as losing the core socket. A paused service remains paused until an explicit start. There is no App startup hook installed by this change; start/ensure the relay explicitly or through an authorized existing service setup.
 
-Claude's existing Hook/claude-run guard was designed for Herdr pane/session identities and is **not integrated into core**. Core delivery uses reported status and hc's blocked protection only. Guard settings report this limitation and reject policy changes rather than pretending interception is enabled. Core question/permission false-idle behavior is not proven fixed by this adapter.
+Claude's existing Hook/claude-run guard was designed for Herdr pane/session identities and is **not integrated into core**. Core delivery uses reported status and hc's blocked protection only. The guard API reports this limitation and rejects policy changes. **Known v0.9.0 TUI limitation:** Preferences still shows the legacy interception control and may display Off even though core does not support it; attempting to change it fails. Do not use that control, `claude-run`, or `claude-guard` as a core protection mechanism. Core question/permission false-idle behavior is not proven fixed by this adapter.
 
-本次不安裝 App startup hook；受管理服務綁 core socket，關 App 視窗不等於停 core。舊 Claude Hook／claude-run 問答攔截未移植到 core，介面會揭露不支援並拒絕修改，不偽造 ready，也不宣稱解決 false-idle 問題。
+本次不安裝 App startup hook；受管理服務綁 core socket，關 App 視窗不等於停 core。舊 Claude Hook／claude-run 問答攔截未移植到 core，guard API 會拒絕修改。**v0.9.0 已知 TUI 限制：**偏好設定仍顯示舊攔截控制，可能把不支援顯示為 Off，嘗試變更會失敗；不要以該開關或舊 Hook CLI 當作 core 防護。不偽造 ready，也不宣稱解決 false-idle 問題。
+
+Core requires the agent's own status report; a terminal with a Claude process but no status is not a ready agent. hrelay does not install status reporting, create App tabs, or configure an agent's background-session behavior.
 
 ## Verification limits / 驗證限制
 
-Tests use fake hc executables, fake service-manager runners, temporary SQLite databases and private Unix sockets. No live agent, formal queue, installed binary or OS service manager is used. Real remote reconnect, raw Agent interaction, actual service-manager startup and human acceptance remain separate tests. Source compatibility with other hc versions is not asserted.
+Tests use fake hc executables, fake service-manager runners, temporary SQLite databases and private Unix sockets. Those automated tests do not use live agents, formal queues, installed binaries or an OS service manager. A separate basic live-core round trip has been observed with an isolated relay state; it does not establish complete agent, question, permission, draft or service-lifecycle coverage. Real remote reconnect, actual service-manager startup and human acceptance remain separate tests. Source compatibility with other hc versions is not asserted.
