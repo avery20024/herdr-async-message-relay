@@ -1,8 +1,8 @@
 # Native agent command and SOP integration
 
-## Development backend note (unreleased)
+## Backend selection (v0.9.0)
 
-The instructions below describe released Herdr behavior. Development builds also support a durable [core backend](core-backend.md): complete HC terminal context auto-selects it, caller/sender remains explicit, old state/services stay isolated, and uncertain core batches require manual resolution rather than automatic replay. In core mode preserve HC context instead of requiring HERDR_SOCKET_PATH; core names are not App tab labels. Released v0.8.2 does not provide this feature, and external wrappers that directly invoke hc still bypass hrelay.
+v0.9.0 also supports a durable [core backend](core-backend.md): complete HC terminal context auto-selects it, sender declarations are verified, old state/services stay isolated, and uncertain core batches require manual resolution rather than automatic replay. In core mode preserve HC context instead of requiring HERDR_SOCKET_PATH; core names are not App tab labels. v0.8.2 does not provide core support. External wrappers that directly invoke hc still bypass hrelay; installation does not rewrite them. The tab-routing, Herdr socket, plugin installation and Hook details below apply to the legacy Herdr backend unless stated otherwise.
 
 ## The intended interface
 
@@ -58,9 +58,9 @@ hrelay version
 
 Release v0.1.0 does not contain short send syntax or stable CLI installation. Install v0.2.0 or newer before using these examples; a v0.1.0 binary cannot substitute for the native short-command interface.
 
-## Caller-side sender verification (unreleased)
+## Caller-side sender verification (v0.9.0)
 
-Released v0.8.2 still trusts sender declarations. This source adds the sending CLI's physical pwd + live foreground directory + unique pane/tab verification before Ensure/POST. All nonempty `--from`, `HERDR_RELAY_FROM` and `HERDR_SEND_FROM` declarations must agree; explicit flags cannot hide a stale environment. Unique observed directories can resolve a sender without a hint. Shared directories need a unique pane/tab binding; verified bindings support repository/Worktree callers, never an arbitrary basename. Selected-backend discovery/identity conflicts fail before enqueue. Core uses HC_TERMINAL_ID and ignores inherited Herdr pane/tab/context flags. Outside the selected Herdr/core seat, an authorized explicit `--from` retains manual/offline operation; environment alone does not. See [full rules and migration](sender-identity.md). This is not authentication or a question-delivery fix.
+v0.8.2 trusts sender declarations. v0.9.0 adds the sending CLI's physical pwd + live foreground directory + unique pane/tab verification before Ensure/POST. All nonempty `--from`, `HERDR_RELAY_FROM` and `HERDR_SEND_FROM` declarations must agree; explicit flags cannot hide a stale environment. Unique observed directories can resolve a sender without a hint. Shared directories need a unique pane/tab binding; verified bindings support repository/Worktree callers, never an arbitrary basename. Selected-backend discovery/identity conflicts fail before enqueue. Core uses HC_TERMINAL_ID and ignores inherited Herdr pane/tab/context flags. Outside the selected Herdr/core seat, an authorized explicit `--from` retains manual/offline operation; environment alone does not. See [full rules and migration](sender-identity.md). This is not authentication or a question-delivery fix.
 
 ## Per-agent context belongs to the team launcher
 

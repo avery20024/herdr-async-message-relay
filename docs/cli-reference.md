@@ -6,7 +6,7 @@ Use [the UI](ui.md) for everyday history, filters and UI preferences. This refer
 
 ## Current scope
 
-**Unreleased core support:** development builds auto-select core from complete HC terminal context and retain enqueue-first delivery with isolated state/registry. v0.8.2 has no core adapter. Backend selection, `HC_BIN_PATH` / `HC_SOCKET`, namespace rules and the **no automatic core retry** policy are documented in [core-backend.md](core-backend.md). The Herdr routing and Hook details below still describe the legacy backend, not core.
+**v0.9.0 core support:** supporting CLI and worker versions auto-select core from complete HC terminal context and retain enqueue-first delivery with isolated state/registry. v0.8.2 has no core adapter. Backend selection, `HC_BIN_PATH` / `HC_SOCKET`, namespace rules and the **no automatic core retry** policy are documented in [core-backend.md](core-backend.md). The Herdr routing and Hook details below still describe the legacy backend, not core.
 
 This is an early release for macOS and Linux, arm64 and amd64. The Herdr compatibility baseline is **0.9.3**. Windows is not supported.
 
@@ -149,7 +149,7 @@ The worker dispatches only to uniquely matched `idle` or `done` agents with a va
 
 ## Send and inspect
 
-**Unreleased:** send now verifies caller-side physical pwd against live foreground directories and unique pane/tab bindings before service Ensure/POST. It rejects contradictory `--from` / `HERDR_RELAY_FROM` / `HERDR_SEND_FROM` declarations; none silently overrides the others. Shared directories need a unique binding; Worktrees use a verified binding, not their basename. Core binds HC_TERMINAL_ID and ignores inherited Herdr pane/tab/context flags. Outside the selected Herdr/core seat, an authorized explicit `--from` retains manual/offline use; environment alone is not enough. Released v0.8.2 does not include this change. See [full sender rules and migration](sender-identity.md).
+**v0.9.0:** send verifies caller-side physical pwd against live foreground directories and unique pane/tab bindings before service Ensure/POST. It rejects contradictory `--from` / `HERDR_RELAY_FROM` / `HERDR_SEND_FROM` declarations; none silently overrides the others. Shared directories need a unique binding; Worktrees use a verified binding, not their basename. Core binds HC_TERMINAL_ID and ignores inherited Herdr pane/tab/context flags. Outside the selected Herdr/core seat, an authorized explicit `--from` retains manual/offline use; environment alone is not enough. v0.8.2 does not include this change. See [full sender rules and migration](sender-identity.md).
 
 Set `DELIVER_ROOT` and `HERDR_RELAY_FROM` in each agent's launch environment using its actual identity. For a configured `dev` seat:
 

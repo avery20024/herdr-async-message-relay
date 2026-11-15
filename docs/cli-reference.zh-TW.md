@@ -6,7 +6,7 @@
 
 ## 目前範圍
 
-**core 支援尚未發布：**開發版依完整 HC 終端環境分流，仍先入列，state／registry 與舊後端隔離。v0.8.2 沒有 core adapter。後端選擇、HC_BIN_PATH／HC_SOCKET、分離清單及 **core 不自動重送**等規則見 [core 後端文件](core-backend.md)；下方 Herdr 路由與 Hook 說明仍僅適用舊後端。
+**v0.9.0 core 支援：**CLI 與 worker 都需使用支援版本，依完整 HC 終端環境分流，仍先入列，state／registry 與舊後端隔離。v0.8.2 沒有 core adapter。後端選擇、HC_BIN_PATH／HC_SOCKET、分離清單及 **core 不自動重送**等規則見 [core 後端文件](core-backend.md)；下方 Herdr 路由與 Hook 說明仍僅適用舊後端。
 
 目前為早期版本，支援 macOS／Linux 的 arm64 與 amd64，Herdr 相容基準為 **0.9.3**，不支援 Windows。
 
@@ -149,7 +149,7 @@ worker 只會投遞至唯一匹配、具有有效 `state_change_seq` 的 `idle` 
 
 ## 發送與查詢
 
-**尚未發布：**此原始碼在服務 Ensure／POST 前，以 caller 自己的實體 pwd 對照即時前景目錄與唯一 pane／tab 綁定；`--from`、`HERDR_RELAY_FROM`、`HERDR_SEND_FROM` 有矛盾即拒送，不靜默覆蓋。共用目錄須唯一席位綁定；Worktree 用經核對的綁定，不取 basename 猜角色。core 綁定 HC_TERMINAL_ID，不混入繼承的舊 Herdr pane／tab。非選定 Herdr／core 席位環境保留已授權的顯式 `--from` 人工／離線入口，只有環境值不足以使用此例外。已發布 v0.8.2 尚未包含此變更，詳見[完整身分解析與遷移限制](sender-identity.md)。
+**v0.9.0：**發送 CLI 在服務 Ensure／POST 前，以 caller 自己的實體 pwd 對照即時前景目錄與唯一 pane／tab 綁定；`--from`、`HERDR_RELAY_FROM`、`HERDR_SEND_FROM` 有矛盾即拒送，不靜默覆蓋。共用目錄須唯一席位綁定；Worktree 用經核對的綁定，不取 basename 猜角色。core 綁定 HC_TERMINAL_ID，不混入繼承的舊 Herdr pane／tab。非選定 Herdr／core 席位環境保留已授權的顯式 `--from` 人工／離線入口，只有環境值不足以使用此例外。v0.8.2 未包含此變更，詳見[完整身分解析與遷移限制](sender-identity.md)。
 
 在各 agent 的啟動環境設定 `DELIVER_ROOT` 與代表實際角色的 `HERDR_RELAY_FROM`。以已設定的 `dev` 座位為例：
 
