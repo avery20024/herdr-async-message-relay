@@ -135,8 +135,9 @@ func buildCommandHelpTopics() map[string]commandHelp {
 		"ui": {
 			syntax: "ui",
 			notes: []string{
-				"Read-only history over the existing relay socket; never starts a service or writes to the queue.",
+				"History over the existing relay socket; never starts a service. Ctrl+Enter opens uncertain batch retry confirmation; y requeues, Esc cancels. Duplicate delivery is possible.",
 				"One-second auto refresh by default: r refreshes; Ctrl+W toggles auto refresh.",
+				"y opens a centered copy guide: yy body, yi message ID, yb batch ID, ys sender, yr recipient; Esc cancels. Detected OSC 52 first, otherwise pbcopy; OSC 52 is not a write receipt.",
 				"j/k or arrows select; u/d move the list by half a page; U/D page the message body.",
 				"[ and ] page metadata up/down; list, body and metadata keys never switch focus.",
 				"Layout: list above; metadata bottom-left and message body bottom-right; no focus switching.",
@@ -159,7 +160,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 		},
 		"status": {
 			syntax:   "status",
-			notes:    []string{"Reads queue status from the existing relay; does not automatically start a service.", "accepted = durably stored; submitted is not a read or task-acceptance receipt."},
+			notes:    []string{"Reads queue status from the existing relay; does not automatically start a service.", "queue_blocks identifies core recipients blocked by an uncertain batch, with batch_id and detail; queued remains the stored state.", "accepted = durably stored; submitted is not a read or task-acceptance receipt."},
 			examples: []string{"hrelay --root /absolute/team status"},
 		},
 		"show": {
@@ -189,7 +190,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 			},
 			notes: []string{
 				"--batch, --action and --note default to empty; --confirm defaults to false. All must be explicitly supplied.",
-				"Only uncertain batches can be resolved; uncertain batches are retried automatically until DELIVER_MAX_ATTEMPTS.",
+				"Only uncertain batches can be resolved. Core requires explicit resolution; legacy retries automatically until DELIVER_MAX_ATTEMPTS.",
 				"Inspect the target pane and stored records before resolving a held batch.",
 				"retry requeues the batch and may duplicate a prior submission; submitted records it without replay.",
 				"Inspect uncertain batches before resolving; never blindly replay a message.",

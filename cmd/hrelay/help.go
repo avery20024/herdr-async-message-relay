@@ -22,7 +22,7 @@ var helpCommands = []helpEntry{
 	{"start ID", "Resume one registered instance by ID from its saved settings."},
 	{"rm [--purge --confirm] ID", "Stop and unregister an instance; the queue is kept unless --purge --confirm."},
 	{"status", "Show queue and batch status."},
-	{"ui", "Browse message history in a read-only terminal UI."},
+	{"ui", "Browse message history and explicitly retry uncertain batches."},
 	{"show msg-ID|batch-ID", "Inspect one stored message or batch."},
 	{"server on|off|restart|status", "Resume/start, pause/stop, restart, or inspect this project's relay."},
 	{"service ensure|start|stop|restart|status|restore|list", "Advanced service controls; restore unpaused registrations or list services."},

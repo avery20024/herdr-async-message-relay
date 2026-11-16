@@ -4,7 +4,7 @@ import tea "charm.land/bubbletea/v2"
 
 // 使用與 View 相同的零起算座標；不把外框、標題或彈窗事件轉成背景導覽。
 func (m *Model) mouseWheel(msg tea.MouseWheelMsg) tea.Cmd {
-	if m.popup || m.preferencesOpen || m.helpOpen || m.width < minimumWidth || m.height < minimumHeight {
+	if m.popup || m.preferencesOpen || m.helpOpen || m.retryOpen || m.yankOpen || m.width < minimumWidth || m.height < minimumHeight {
 		return nil
 	}
 	delta := 0

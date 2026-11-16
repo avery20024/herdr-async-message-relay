@@ -67,6 +67,27 @@ func (m *Model) text(s string) string {
 }
 
 var labels = map[string]string{
+	"y: copy selected message": "y：複製所選訊息",
+	"Message ID":               "訊息 ID", "Batch ID": "批次 ID",
+	"ESC cancel":                                 "ESC 取消",
+	"Open copy combinations (y/i/b/s/r)":         "開啟複製組合鍵（y/i/b/s/r）",
+	"Select a message to copy.":                  "請選取要複製的訊息。",
+	"Nothing copied; key or field unavailable.":  "未複製：按鍵或欄位不可用。",
+	"Copy failed; clipboard was not confirmed.":  "複製失敗，未確認剪貼簿寫入。",
+	"OSC 52 copy request sent; paste to verify.": "已送出 OSC 52 複製請求，請貼上確認。",
+	"Copied via pbcopy.":                         "已透過 pbcopy 複製。",
+	"Queue wait reason":                          "排隊原因", "Blocked by uncertain batch": "被 uncertain 批次擋住", "Blocking batch": "阻塞批次",
+	"Queue block status unavailable; upgrade worker separately.":                "無法取得排隊阻塞原因，請另行升級 worker。",
+	"Retry uncertain batch?":                                                    "重送 uncertain 批次？",
+	"May already be delivered. Retrying can duplicate delivery.":                "可能已送達；重送可能造成重複投遞。",
+	"All uncertain messages in this batch will be requeued, not sent directly.": "此批次所有 uncertain 訊息將重新排隊，不直接發送。",
+	"y retry / Esc cancel / j,k scroll":                                         "y重送 / Esc取消 / j,k捲動",
+	"Retry pending; do not repeat.":                                             "重送處理中，請勿重複操作。",
+	"Worker does not support safe UI retry; upgrade separately.":                "worker 不支援安全 UI 重送，請另行升級。",
+	"Select an uncertain message to retry.":                                     "請選取 uncertain 訊息再重送。",
+	"Retry outcome unconfirmed; refresh before another attempt.":                "重送結果未確認，再試前請先刷新核對。",
+	"Batch requeued; not a delivery receipt.":                                   "批次已重新排隊，不代表已送達。",
+	"Retry selected uncertain batch (confirmation required)":                    "重送所選 uncertain 批次（須確認）",
 	"Preferences": "偏好設定", "Language": "語系", "Theme": "主題", "Auto": "自動", "Terminal (default)": "終端預設",
 	"Team guard unavailable.":                                         "團隊攔截設定無法使用。",
 	"Team save unconfirmed; reload before retrying.":                  "團隊設定儲存未確認，請先重載再重試。",
@@ -140,6 +161,14 @@ func (m *Model) metadataContent(styled bool) []string {
 		return m.metadataLabel(key) + separator + value
 	}
 	text := field("Sender", row.Sender) + "\n" + field("Recipient", row.Recipient) + "\n" + field("State", row.State) + "\n" + field("Stored", stamp(row.CreatedAt, true)) + "\n" + field("Delivery time", stamp(delivered(row), true))
+	if block := m.blockFor(row); block != nil {
+		text += "\n" + field("Queue wait reason", m.text("Blocked by uncertain batch")) + "\n" + field("Blocking batch", block.BatchID) + "\n" + field("Batch evidence", block.Detail)
+	} else if row.State == "queued" && m.queueBlocks == nil {
+		text += "\n" + m.text("Queue block status unavailable; upgrade worker separately.")
+	}
+	if row.State == "uncertain" {
+		text += "\n" + m.text("May already be delivered. Retrying can duplicate delivery.") + "\nCtrl+Enter: " + m.text("Retry selected uncertain batch (confirmation required)")
+	}
 	if delivered(row) > 0 {
 		text += "\n" + m.text("Automatic submission record")
 	}
@@ -201,7 +230,7 @@ func (m *Model) tableLines() []string {
 	result := []string{m.styles.heading.Render(cell("  "+line([]string{m.text("Sender"), m.text("Stored"), m.text("State"), m.text("Message"), m.text("Recipient"), m.text("Delivery time")}), width))}
 	for i := m.top; i < len(m.rows) && len(result) < height; i++ {
 		row := m.rows[i]
-		fields := []string{row.Sender, stamp(row.CreatedAt, false), stateLabel(row.State), summaryText(row.Body), row.Recipient, stamp(delivered(row), false)}
+		fields := []string{row.Sender, stamp(row.CreatedAt, false), m.rowState(row), summaryText(row.Body), row.Recipient, stamp(delivered(row), false)}
 		parts := make([]string, len(fields))
 		for col, value := range fields {
 			parts[col] = cell(value, widths[col])
@@ -311,6 +340,12 @@ func (m *Model) View() tea.View {
 	}
 	if m.helpOpen {
 		content = m.helpOverlay(content)
+	}
+	if m.retryOpen {
+		content = m.retryOverlay(content)
+	}
+	if m.yankOpen {
+		content = m.yankOverlay(content)
 	}
 	title := " " + clean(filepath.Base(m.root)) + " · hrelay ui "
 	summary := fmt.Sprintf("%d/%d", min(m.selected+1, len(m.rows)), len(m.rows))

@@ -15,8 +15,8 @@ func TestAutoRefreshStartsByDefault(t *testing.T) {
 		t.Fatal("auto refresh must default on")
 	}
 	commands, ok := m.Init()().(tea.BatchMsg)
-	if !ok || len(commands) != 3 {
-		t.Fatal("Init must schedule initial fetch, background query and auto timer")
+	if !ok || len(commands) != 4 {
+		t.Fatal("Init must schedule initial fetch, background query, auto timer and Ms capability query")
 	}
 	message := commands[2]()
 	tick, ok := message.(tickMsg)

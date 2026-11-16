@@ -17,6 +17,8 @@ var shortcutEntries = [][3]string{
 	{"U/D (Shift+u/d)", "Body page up/down", "Browsing"},
 	{"[ / ]", "Metadata page up/down", "Browsing"},
 	{"r", "Refresh messages only", "Browsing"},
+	{"y → y/i/b/s/r", "Open copy combinations (y/i/b/s/r)", "Browsing"},
+	{"Ctrl+Enter", "Retry selected uncertain batch (confirmation required)", "Browsing"},
 	{"Ctrl+F", "Open filters", "Filters"},
 	{"P (Shift+p)", "Clear applied filters", "Filters"},
 	{"Ctrl+P", "Open Preferences", "Settings"},

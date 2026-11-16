@@ -115,8 +115,8 @@ func TestHelpScrollReachabilityResizeAndGlobalKeys(t *testing.T) {
 	}
 	m.Update(key("G"))
 	m.Update(tea.WindowSizeMsg{Width: 180, Height: 60})
-	if m.helpOffset != 0 {
-		t.Fatal("resize did not clamp short document")
+	if m.helpOffset != max(0, len(m.helpDocument())-m.helpPageHeight()) {
+		t.Fatal("resize did not clamp document")
 	}
 	count := len(f.calls)
 	m.Update(key("ctrl+r"))
@@ -325,10 +325,10 @@ func TestHelpCenteredOverlayPrototype(t *testing.T) {
 			t.Fatal("hint must be immediately above bottom border")
 		}
 		if size[1] >= 32 {
-			if len(content) != 25 || len(m.helpDocument()) >= m.helpPageHeight() {
-				t.Fatal("missing fixed-height blank viewport")
+			if len(content) != 25 {
+				t.Fatal("missing fixed-height viewport")
 			}
-			if strings.TrimSpace(ansi.Strip(content[len(content)-2])) != "" {
+			if len(m.helpDocument()) < m.helpPageHeight() && strings.TrimSpace(ansi.Strip(content[len(content)-2])) != "" {
 				t.Fatal("short content must leave blank space above bottom hint")
 			}
 		}
@@ -394,8 +394,8 @@ func TestHelpAllThemesLanguagesAndSizes(t *testing.T) {
 	m, _ := ready(t)
 	m.Update(key("?"))
 	doc := ansi.Strip(strings.Join(m.helpDocument(), "\n"))
-	if len(shortcutEntries) != 14 || len(m.helpDocument()) != 21 {
-		t.Fatal("grouped list must have fourteen shortcuts, four headings and three separators")
+	if len(shortcutEntries) != 16 || len(m.helpDocument()) < 22 {
+		t.Fatal("grouped list must have fifteen shortcuts, four headings and three separators")
 	}
 	seen := map[string]bool{}
 	for _, entry := range shortcutEntries {

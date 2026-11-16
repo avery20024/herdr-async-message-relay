@@ -175,13 +175,31 @@ func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 		w.clearWarn("held:" + role)
 	}
 	batch := sqlc.Batch{ID: NewID("batch-"), Recipient: role, Pane: w.batchPane(a), BaselineSeq: *a.Seq, CreatedAt: time.Now().UnixMilli()}
+	attempted, err := w.Store.Q.PreviouslyAttemptedPending(ctx, role)
+	if err != nil {
+		return err
+	}
+	retried := make(map[string]bool, len(attempted))
+	for _, id := range attempted {
+		retried[id] = true
+	}
+	// 人工 retry 會回到 queued，但舊成員紀錄仍須反映在接收端的重送警示與 bytes 計算。
+	render := func(rows []sqlc.Message) string {
+		copyRows := append([]sqlc.Message{}, rows...)
+		for i := range copyRows {
+			if retried[copyRows[i].ID] {
+				copyRows[i].State = "uncertain"
+			}
+		}
+		return RenderBatch(batch.ID, copyRows)
+	}
 	chosen := []sqlc.Message{}
 	for _, m := range messages {
 		if len(chosen) == w.Config.BatchSize {
 			break
 		}
 		candidate := append(append([]sqlc.Message{}, chosen...), m)
-		if len(RenderBatch(batch.ID, candidate)) > w.Config.BatchBytes {
+		if len(render(candidate)) > w.Config.BatchBytes {
 			if len(chosen) == 0 {
 				return fmt.Errorf("head message %s exceeds batch byte limit; restore a larger DELIVER_BATCH_BYTES", m.ID)
 			}
@@ -200,12 +218,12 @@ func (w *Worker) Dispatch(ctx context.Context, role string, a Agent) error {
 		if backend, ok := w.Herdr.(interface {
 			PromptAgent(context.Context, string, Agent, string) error
 		}); ok {
-			err = backend.PromptAgent(ctx, role, a, RenderBatch(batch.ID, chosen))
+			err = backend.PromptAgent(ctx, role, a, render(chosen))
 		} else {
 			err = errors.New("core delivery backend unavailable")
 		}
 	} else {
-		err = w.Herdr.Prompt(ctx, a.Pane, RenderBatch(batch.ID, chosen))
+		err = w.Herdr.Prompt(ctx, a.Pane, render(chosen))
 	}
 	state, detail := "submitted", "submission observed; not a read or acceptance receipt"
 	if err != nil {

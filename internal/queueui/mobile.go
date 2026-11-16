@@ -53,7 +53,11 @@ func (m *Model) cardLines() []string {
 	result := make([]string, 0, height)
 	for i := m.top; i < len(m.rows) && i < m.top+m.visibleMessages(); i++ {
 		row := m.rows[i]
-		state := cell(mobileState(row.State, width), min(13, ansi.StringWidth(mobileState(row.State, width))))
+		stateText := mobileState(row.State, width)
+		if m.blockFor(row) != nil {
+			stateText += " !"
+		}
+		state := cell(stateText, min(13, ansi.StringWidth(stateText)))
 		routeWidth := max(5, width-3-ansi.StringWidth(state))
 		names := routeWidth - 3
 		route := cell(row.Sender, (names+1)/2) + " → " + cell(row.Recipient, names/2)

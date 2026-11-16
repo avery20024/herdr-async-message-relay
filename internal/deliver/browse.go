@@ -10,11 +10,13 @@ import (
 
 // BrowseResponse 是唯讀介面快照；批次時間為證據，不宣稱訊息已讀。
 type BrowseResponse struct {
-	ProjectRoot string                   `json:"project_root"`
-	Items       []sqlc.BrowseMessagesRow `json:"items"`
-	NextBefore  int64                    `json:"next_before"`
-	Senders     []string                 `json:"senders"`
-	Recipients  []string                 `json:"recipients"`
+	ProjectRoot    string                   `json:"project_root"`
+	Items          []sqlc.BrowseMessagesRow `json:"items"`
+	NextBefore     int64                    `json:"next_before"`
+	Senders        []string                 `json:"senders"`
+	Recipients     []string                 `json:"recipients"`
+	QueueBlocks    []QueueBlock             `json:"queue_blocks"`
+	RetrySupported bool                     `json:"retry_supported"`
 }
 
 func (a API) browseMessages(w http.ResponseWriter, r *http.Request) {
@@ -88,9 +90,14 @@ func (a API) browseMessages(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 500, "unable to read recipient choices")
 		return
 	}
+	blocks, err := queueBlocks(r.Context(), a.Config, q)
+	if err != nil {
+		apiError(w, 500, "unable to read queue blocks")
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		apiError(w, 500, "unable to finish message snapshot")
 		return
 	}
-	respond(w, 200, BrowseResponse{ProjectRoot: a.Config.Root, Items: rows, NextBefore: next, Senders: senders, Recipients: recipients})
+	respond(w, 200, BrowseResponse{ProjectRoot: a.Config.Root, Items: rows, NextBefore: next, Senders: senders, Recipients: recipients, QueueBlocks: blocks, RetrySupported: true})
 }
