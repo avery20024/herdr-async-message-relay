@@ -147,6 +147,16 @@ supervisor 與 Herdr pane 相互獨立；Herdr 結束後，服務仍可能存活
 
 worker 只會投遞至唯一匹配、具有有效 `state_change_seq` 的 `idle` 或 `done` agent。缺席、重複、忙碌、blocked 或未知狀態都保持 queued。Herdr 狀態查詢與 prompt 提交並非原子操作，兩者之間座位仍可能改變。
 
+## uncertain 阻塞原因與介面復原（v0.10.0）
+
+配套新版 worker／UI（v0.10.0+）在 `status` 增加 `retry_supported: true` 與 `queue_blocks: [{recipient, reason, batch_id, detail}]`。core 的 `reason: uncertain_requires_resolution` 說明該角色為何持續 queued，即使阻塞批次已超出最新 100 筆摘要仍可查到；持久狀態不變。這不是完整的座位／問答健康檢查，舊後端自動重試不會誤標為 core 人工阻塞。欄位缺少表示舊 worker，不能視為沒有阻塞。
+
+`ui` 在受影響的 queued 列／卡片標上 `!`，metadata 顯示阻塞批次與原因。選取 uncertain 項目後按 **Ctrl+Enter**，核對可能已送達、重送可能重複的警告，再按 **y** 將**整批 uncertain 訊息**重新排隊；Esc 取消，Enter 不確認。保留 ID、key、原文、FIFO 與舊批次紀錄；worker 仍重新查核席位及可接收狀態，UI 不直接送信。確認重送會寫入佇列，不同於一般查閱。網路錯誤也可能已完成寫入，須成功刷新後才能再嘗試；舊 worker 不支援時停用此操作。詳見 [完整 UI 操作](ui.md#queue-blocks-and-uncertain-retry)。
+
+## UI 組合鍵複製（v0.10.0）
+
+第一下 **y** 在中央方格列出第二鍵 **y／i／b／s／r** 與用途：**yy** 完整原文、**yi** 訊息 ID、**yb** 批次 ID、**ys** 發送者、**yr** 收件者。Esc 取消，目標固定為第一鍵時的訊息；有效第二鍵才寫剪貼簿，缺欄位不清空剪貼簿。優先採用終端 XTGETTCAP Ms 回報的 OSC 52 能力，否則將原文透過 stdin 交給有兩秒逾時的 pbcopy；不讀剪貼簿探測、不經 shell。OSC 52 僅提示請求已送出，不冒稱寫入已確認。不需新版 worker，也不改寫佇列。詳見 [複製操作與限制](ui.md#y-copy-combinations)。
+
 ## 發送與查詢
 
 **v0.9.0：**發送 CLI 在服務 Ensure／POST 前，以 caller 自己的實體 pwd 對照即時前景目錄與唯一 pane／tab 綁定；`--from`、`HERDR_RELAY_FROM`、`HERDR_SEND_FROM` 有矛盾即拒送，不靜默覆蓋。共用目錄須唯一席位綁定；Worktree 用經核對的綁定，不取 basename 猜角色。core 綁定 HC_TERMINAL_ID，不混入繼承的舊 Herdr pane／tab。非選定 Herdr／core 席位環境保留已授權的顯式 `--from` 人工／離線入口，只有環境值不足以使用此例外。v0.8.2 未包含此變更，詳見[完整身分解析與遷移限制](sender-identity.md)。
@@ -320,11 +330,13 @@ registry 以 0700 目錄內的 0600 JSON 保存 root、佇列路徑、允許清�
 | `queued` | 已 commit，等待可接收的角色 |
 | `dispatching` | 批次成員已固定，可能正在對外提交 |
 | `submitted` | 提交觀察成功，不是已讀或處理回條 |
-| `uncertain` | 可能已提交；退避後自動重試，直到達投遞次數上限 |
+| `uncertain` | 可能已提交；core 保留同角色 FIFO 等待明確處置，僅舊後端退避自動重試至上限 |
 
-worker 使用有時間上限的 `herdr agent prompt --wait` 觀察提交，不等待接收角色完成任務。提交錯誤或 dispatch 中斷會保守轉為 `uncertain`，同一批訊息會在 `DELIVER_RETRY_BACKOFF_MS` 之後依 FIFO 重試，每則最多投遞 `DELIVER_MAX_ATTEMPTS` 次。因此語意為 **at-least-once**：若先前的提交其實已到達 pane，重試可能造成重複；批次封套保留每則 message ID 供接收端辨識重複。達到次數上限的訊息會保留待人工查核，其餘佇列繼續送出，並以警告列出被保留的 message ID；單一角色的不確定性不會再阻塞其他角色。
+**core 行為不同：**不自動重送 uncertain，也不越過該角色的後續訊息，須查核後明確 resolve；下方退避與次數上限的自動重試僅適用**舊 Herdr 後端**。
 
-重試會自動進行；`resolve` 用於人工查核後的例外處置與達到次數上限而被保留的訊息。查核接收方、prompt 輸入與任務紀錄後，具授權的操作者可處置批次：
+舊 worker 使用有時間上限的 `herdr agent prompt --wait` 觀察提交，不等待接收角色完成任務。提交錯誤或 dispatch 中斷會保守轉為 `uncertain`，同一批訊息會在 `DELIVER_RETRY_BACKOFF_MS` 之後依 FIFO 重試，每則最多投遞 `DELIVER_MAX_ATTEMPTS` 次。因此語意為 **at-least-once**：若先前的提交其實已到達 pane，重試可能造成重複；批次封套保留每則 message ID 供接收端辨識重複。達到次數上限的訊息會保留待人工查核，其餘佇列繼續送出，並以警告列出被保留的 message ID；單一角色的不確定性不會再阻塞其他角色。
+
+僅舊後端自動重試，core 須明確 `resolve`；此操作用於人工查核後的例外處置，以及舊後端達次數上限而被保留的訊息。查核接收方、prompt 輸入與任務紀錄後，具授權的操作者可處置批次：
 
 ```sh
 # 確認未提交：將相同 message IDs 放回佇列。

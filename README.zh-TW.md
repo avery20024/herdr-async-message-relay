@@ -37,9 +37,13 @@ hrelay --root "$TEAM" server on
 hrelay --root "$TEAM" ui
 ```
 
-已設定 `DELIVER_ROOT` 的環境可在任何目錄直接執行 `hrelay ui`，詳見[團隊根目錄與實例](#團隊根目錄與實例)。UI 不會啟動或升級 worker、不發送訊息，也不處置 uncertain 批次。**此處 Claude 攔截控制僅適用舊 Herdr，不適用 core。** **預設：**UI 預設每秒自動刷新，缺少 Claude 攔截政策時預設**關閉**，保留既有明確設定。v0.8.2 UI 已恢復 Ctrl+P 實驗性攔截開關與兩行淡化提示（v0.8.1 仍隱藏）；開啟選單不改政策，修改草稿後按 Enter 才儲存；`?` 分為瀏覧、篩選、設置、其他。已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。現行路由與缺省政策需重啟為對應版本的 worker；發布或更新 CLI／UI 不會替換運行中的 worker。較早版本（例如 v0.6.0）缺少政策時預設開啟，升級保留既有明確開啟／關閉設定；**v0.8.2 觀測式攔截：**缺少或無法使用問答觀測時，不再額外擋通知；只有已觀測到配對身份的 PreToolUse、尚未收到該問題 PostToolUse 才擋。新增 `claude-run` 啟動包裝器記錄時間與世代，同 session 重啟後可排除舊 pending／遲到 Hook。v0.8.1 仍採原本嚴格 ready 規則。缺失事件可能漏攔，這是明確接受的 fail-open 取捨，不是完整防護。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
+已設定 `DELIVER_ROOT` 的環境可在任何目錄直接執行 `hrelay ui`，詳見[團隊根目錄與實例](#團隊根目錄與實例)。UI 不會啟動或升級 worker，也不直接送信。配套新版 UI／worker（v0.10.0+）可顯示 core uncertain 批次造成的 queued 阻塞原因；選取 uncertain 項目按 **Ctrl+Enter**，查核重複投遞警告後按 **y**，將整批 uncertain 訊息重新排隊（Esc 取消）。明確確認的復原操作會寫入佇列，一般瀏覽不會。詳見 [復原操作及限制](docs/ui.md#queue-blocks-and-uncertain-retry)。**複製快捷鍵：**第一下 **y** 在畫面中央開啟按鍵提示方格；**yy** 複製完整原文、**yi** 訊息 ID、**yb** 批次 ID、**ys** 發送者、**yr** 收件者，Esc 取消。偵測到 OSC 52 能力則優先使用，否則以 pbcopy 備援；詳見 [能力判斷與寫入確認限制](docs/ui.md#y-copy-combinations)。**此處 Claude 攔截控制僅適用舊 Herdr，不適用 core。** **預設：**UI 預設每秒自動刷新，缺少 Claude 攔截政策時預設**關閉**，保留既有明確設定。v0.8.2 UI 已恢復 Ctrl+P 實驗性攔截開關與兩行淡化提示（v0.8.1 仍隱藏）；開啟選單不改政策，修改草稿後按 Enter 才儲存；`?` 分為瀏覧、篩選、設置、其他。已接線的 Hooks 在關閉攔截時仍持續記錄問答時間。現行路由與缺省政策需重啟為對應版本的 worker；發布或更新 CLI／UI 不會替換運行中的 worker。較早版本（例如 v0.6.0）缺少政策時預設開啟，升級保留既有明確開啟／關閉設定；**v0.8.2 觀測式攔截：**缺少或無法使用問答觀測時，不再額外擋通知；只有已觀測到配對身份的 PreToolUse、尚未收到該問題 PostToolUse 才擋。新增 `claude-run` 啟動包裝器記錄時間與世代，同 session 重啟後可排除舊 pending／遲到 Hook。v0.8.1 仍採原本嚴格 ready 規則。缺失事件可能漏攔，這是明確接受的 fail-open 取捨，不是完整防護。接線、舊政策遷移及限制見 [問答閘門文件](docs/claude-question-guard.md)。CLI 與 worker 都須相容 v0.5.0；更新插件不會替換已運行的 worker。
 
 各版本變更、路由風險及升級注意事項見 [發布說明目錄](docs/releases/)。v0.6.0 加入依滑鼠位置分區捲動、左下淡色說明置底、欄位值強調，以及 `gg`／`G` 跳至已載入首尾資料。變更與升級注意事項見 [v0.6.0 發布說明](docs/releases/v0.6.0.md)，完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
+
+## v0.10.0：uncertain 重試 UI、複製快捷鍵與 core 修復
+
+v0.10.0 新增 core **uncertain 重試 UI**：`status` 回傳 `queue_blocks` 阻塞原因與 `retry_supported`；在 TUI 選取 uncertain 批次後按 Ctrl+Enter → y 授權重試。另加 **y 複製快捷鍵**（yy／yi／yb／ys／yr），支援 OSC 52 或 pbcopy。同批修正三項 core 投遞 bug：前景行程不可用時的 ForegroundCWD 退回邏輯、貼入後 done→working 競態許可，以及 core 命令逾時預設提高為 30 秒。不需新 worker API 或 schema 遷移。詳見 [v0.10.0 變更說明](docs/releases/v0.10.0.md)。
 
 ## v0.9.0：herdr-core 後端
 

@@ -147,6 +147,16 @@ Do not start it with an untracked shell `&`. Stop the foreground process with Ct
 
 The worker dispatches only to uniquely matched `idle` or `done` agents with a valid `state_change_seq`. Missing, duplicate, busy, blocked, or unknown seats remain queued. Herdr status discovery and prompt submission are not atomic; a seat can change between them.
 
+## Uncertainty barriers and UI recovery (v0.10.0)
+
+With matching new worker/UI builds (v0.10.0+), `status` adds `retry_supported: true` and `queue_blocks: [{recipient, reason, batch_id, detail}]`. For core, `reason: uncertain_requires_resolution` explains why that role's later messages remain queued, even when the blocking record is older than the latest 100 records. Stored states are unchanged. This is not a complete seat/guard health report. Legacy auto-retry is not reported as a manual core barrier. An absent field means an older worker, not proof of no block.
+
+`ui` marks affected queued rows/cards `!` and shows batch evidence in metadata. Select an uncertain item, press **Ctrl+Enter**, inspect the duplicate-delivery warning, then **y** to requeue **all uncertain messages in the batch**; Esc cancels, Enter does not confirm. IDs, keys, bodies, FIFO order and prior batch records remain intact. The worker rechecks seat identity/readiness before delivery; the UI never sends directly. Confirmed retry is a queue write, unlike browsing. Network failure may mean an already-committed resolution: refresh successfully before retrying. Old workers disable the UI action. See [full UI controls](ui.md#queue-blocks-and-uncertain-retry).
+
+## Copy from the UI (v0.10.0)
+
+First **y** opens a centered box describing second keys **y/i/b/s/r**: **yy** full original body, **yi** message ID, **yb** batch ID, **ys** sender, **yr** recipient. Esc cancels; the target is fixed at the first key. No clipboard write occurs until a valid second key, and missing fields do not clear it. A positive terminal XTGETTCAP Ms/OSC 52 capability takes priority; otherwise pbcopy gets exact stdin with a two-second timeout. No clipboard readback or shell is used. OSC 52 only reports request sent, not confirmed copy. Does not require a new worker and never writes the queue. See [copy controls and limits](ui.md#y-copy-combinations).
+
 ## Send and inspect
 
 **v0.9.0:** send verifies caller-side physical pwd against live foreground directories and unique pane/tab bindings before service Ensure/POST. It rejects contradictory `--from` / `HERDR_RELAY_FROM` / `HERDR_SEND_FROM` declarations; none silently overrides the others. Shared directories need a unique binding; Worktrees use a verified binding, not their basename. Core binds HC_TERMINAL_ID and ignores inherited Herdr pane/tab/context flags. Outside the selected Herdr/core seat, an authorized explicit `--from` retains manual/offline use; environment alone is not enough. v0.8.2 does not include this change. See [full sender rules and migration](sender-identity.md).
@@ -322,11 +332,13 @@ Do not shrink the batch byte limit below what an already queued message requires
 | `queued` | Committed and waiting for a ready role |
 | `dispatching` | Fixed batch membership; an external submission may be in progress |
 | `submitted` | Submission observation succeeded; not a read or processing receipt |
-| `uncertain` | Submission may have happened; retried after a backoff, up to the attempt limit |
+| `uncertain` | Submission may have happened; core holds this role's FIFO pending explicit resolution; legacy retries after backoff up to the attempt limit |
 
-The worker uses bounded `herdr agent prompt --wait` observation, not a wait for the recipient's task to finish. A submission error or an interrupted dispatch conservatively produces `uncertain`; the same messages are then retried in FIFO order after `DELIVER_RETRY_BACKOFF_MS`, up to `DELIVER_MAX_ATTEMPTS` deliveries per message. Delivery is therefore **at least once**: a retry can duplicate a submission that had in fact reached the pane. Each message keeps its ID inside the batch envelope so the receiver can recognise a repeat. When a message reaches the attempt limit it is held for inspection and the remaining queue continues; a warning names the held message IDs. Other roles are never blocked by one role's uncertainty.
+**Core differs:** it never automatically retries uncertainty or passes that role's later messages. Inspect and explicitly resolve; the following automatic-backoff and attempt-limit behavior applies to the **legacy Herdr backend only**.
 
-Retries are automatic; `resolve` is for inspected exceptions and for messages held at the attempt limit. After inspecting the recipient, prompt input, and task records, an authorized operator can resolve a batch:
+The legacy worker uses bounded `herdr agent prompt --wait` observation, not a wait for the recipient's task to finish. A submission error or an interrupted dispatch conservatively produces `uncertain`; the same messages are then retried in FIFO order after `DELIVER_RETRY_BACKOFF_MS`, up to `DELIVER_MAX_ATTEMPTS` deliveries per message. Delivery is therefore **at least once**: a retry can duplicate a submission that had in fact reached the pane. Each message keeps its ID inside the batch envelope so the receiver can recognise a repeat. When a message reaches the attempt limit it is held for inspection and the remaining queue continues; a warning names the held message IDs. Other roles are never blocked by one role's uncertainty.
+
+Legacy retries are automatic; core requires explicit `resolve`. Resolution is for inspected exceptions and legacy messages held at the attempt limit. After inspecting the recipient, prompt input, and task records, an authorized operator can resolve a batch:
 
 ```sh
 # Confirmed not submitted: queue the same message IDs for another attempt.
