@@ -1,4 +1,4 @@
-// Package queueui 提供不啟動服務、不寫入佇列的終端檢視介面。
+// Package queueui 提供不啟動服務的終端檢視介面；uncertain 重送須明確確認。
 package queueui
 
 import (

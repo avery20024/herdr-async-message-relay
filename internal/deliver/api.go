@@ -102,12 +102,19 @@ func (a API) Handler() http.Handler {
 		respond(w, 200, map[string]any{"batch": batch, "messages": messages})
 	})
 	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
-		counts, err := a.Store.Q.CountStates(r.Context())
+		tx, err := a.Store.DB.BeginTx(r.Context(), nil)
+		if err != nil {
+			apiError(w, 500, "unable to read status snapshot")
+			return
+		}
+		defer tx.Rollback()
+		q := a.Store.Q.WithTx(tx)
+		counts, err := q.CountStates(r.Context())
 		if err != nil {
 			apiError(w, 500, "unable to read counts")
 			return
 		}
-		messages, err := a.Store.Q.ListMessages(r.Context(), 100)
+		messages, err := q.ListMessages(r.Context(), 100)
 		if err != nil {
 			apiError(w, 500, "unable to read messages")
 			return
@@ -116,18 +123,29 @@ func (a API) Handler() http.Handler {
 		for i := range messages {
 			messages[i].Body = ""
 		}
-		batches, err := a.Store.Q.ListBatches(r.Context(), 100)
+		batches, err := q.ListBatches(r.Context(), 100)
 		if err != nil {
 			apiError(w, 500, "unable to read batches")
 			return
 		}
-		respond(w, 200, map[string]any{"project_root": a.Config.Root, "backend": a.Config.BackendName(), "core_socket": a.Config.CoreSocket, "counts": counts, "messages": messages, "batches": batches, "batch_size": a.Config.BatchSize, "batch_bytes": a.Config.BatchBytes, "poll_ms": a.Config.Poll.Milliseconds()})
+		blocks, err := queueBlocks(r.Context(), a.Config, q)
+		if err != nil {
+			apiError(w, 500, "unable to read queue blocks")
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			apiError(w, 500, "unable to finish status snapshot")
+			return
+		}
+		respond(w, 200, map[string]any{"project_root": a.Config.Root, "backend": a.Config.BackendName(), "core_socket": a.Config.CoreSocket, "counts": counts, "messages": messages, "batches": batches, "queue_blocks": blocks, "retry_supported": true, "batch_size": a.Config.BatchSize, "batch_bytes": a.Config.BatchBytes, "poll_ms": a.Config.Poll.Milliseconds()})
 	})
 	mux.HandleFunc("POST /v1/batches/{id}/resolve", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Action  string `json:"action"`
-			Note    string `json:"note"`
-			Confirm bool   `json:"confirm"`
+			Action      string `json:"action"`
+			Note        string `json:"note"`
+			Confirm     bool   `json:"confirm"`
+			ProjectRoot string `json:"project_root"`
+			MessageID   string `json:"message_id"`
 		}
 		if !decode(w, r, 4096, &req) {
 			return
@@ -135,6 +153,18 @@ func (a API) Handler() http.Handler {
 		if !req.Confirm || strings.TrimSpace(req.Note) == "" {
 			apiError(w, 400, "explicit confirmation and inspection note required")
 			return
+		}
+		// UI 的額外綁定避免連錯 root 或刷新後對另一則訊息操作；舊 CLI 保持相容。
+		if req.ProjectRoot != "" && req.ProjectRoot != a.Config.Root {
+			apiError(w, 409, "relay project root does not match requested root")
+			return
+		}
+		if req.MessageID != "" {
+			message, err := a.Store.Q.GetMessage(r.Context(), req.MessageID)
+			if err != nil || message.State != "uncertain" || !message.BatchID.Valid || message.BatchID.String != r.PathValue("id") {
+				apiError(w, 409, "message is no longer uncertain in this batch; refresh before retrying")
+				return
+			}
 		}
 		if err := a.Store.Resolve(r.Context(), r.PathValue("id"), req.Action, req.Note); err != nil {
 			apiError(w, 409, err.Error())

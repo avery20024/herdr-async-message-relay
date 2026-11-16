@@ -681,6 +681,35 @@ func (q *Queries) PendingRecipients(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const previouslyAttemptedPending = `-- name: PreviouslyAttemptedPending :many
+SELECT messages.id FROM messages
+WHERE recipient = ? AND state IN ('queued','uncertain')
+  AND EXISTS (SELECT 1 FROM batch_members WHERE message_id = messages.id)
+`
+
+func (q *Queries) PreviouslyAttemptedPending(ctx context.Context, recipient string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, previouslyAttemptedPending, recipient)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recoverBatch = `-- name: RecoverBatch :execrows
 UPDATE batches SET state = 'uncertain', updated_at = ?, detail = ? WHERE id = ? AND state = 'dispatching'
 `
@@ -787,4 +816,43 @@ func (q *Queries) SupersedeBatchIfSettled(ctx context.Context, arg SupersedeBatc
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const uncertainQueueBlocks = `-- name: UncertainQueueBlocks :many
+SELECT b.id, b.recipient, b.pane, b.baseline_seq, b.state, b.created_at, b.updated_at, b.detail FROM batches AS b
+WHERE b.state = 'uncertain'
+  AND b.rowid = (SELECT MAX(latest.rowid) FROM batches AS latest WHERE latest.recipient = b.recipient)
+ORDER BY b.recipient
+`
+
+func (q *Queries) UncertainQueueBlocks(ctx context.Context) ([]Batch, error) {
+	rows, err := q.db.QueryContext(ctx, uncertainQueueBlocks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Batch{}
+	for rows.Next() {
+		var i Batch
+		if err := rows.Scan(
+			&i.ID,
+			&i.Recipient,
+			&i.Pane,
+			&i.BaselineSeq,
+			&i.State,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Detail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

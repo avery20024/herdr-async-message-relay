@@ -22,55 +22,64 @@ type pageMsg struct {
 type tickMsg uint64
 
 type Model struct {
-	ctx                               context.Context
-	loader                            Loader
-	language                          i18n.Language
-	baseLanguage                      i18n.Language
-	preferences, preferencesDraft     Preferences
-	preferencesStore                  PreferencesStore
-	preferencesOpen, configUnreadable bool
-	preferenceField                   int
-	guardSettings                     deliver.GuardSettings
-	guardDraft, guardReady, guardBusy bool
-	guardSaving, guardUnconfirmed     bool
-	guardGeneration                   uint64
-	guardError                        string
-	configError, configNotice         string
-	root                              string
-	width, height                     int
-	rows                              []sqlc.BrowseMessagesRow
-	senders, recipients               []string
-	next                              int64
-	selected, top, detailOffset       int
-	metadataOffset                    int
-	pendingSelection, pendingTop      int
-	pendingFrom                       string
-	filter, draft                     Filter
-	popup                             bool
-	helpOpen                          bool
-	helpOffset                        int
-	field                             int
-	auto                              bool
-	timer                             uint64
-	token                             uint64
-	busy, loaded                      bool
-	cancel                            context.CancelFunc
-	lastError                         string
-	notice                            string
-	styles                            theme
-	dark, noColor                     bool
-	backgroundKnown                   bool
-	loading                           spinner.Model
+	ctx                                    context.Context
+	loader                                 Loader
+	language                               i18n.Language
+	baseLanguage                           i18n.Language
+	preferences, preferencesDraft          Preferences
+	preferencesStore                       PreferencesStore
+	preferencesOpen, configUnreadable      bool
+	preferenceField                        int
+	guardSettings                          deliver.GuardSettings
+	guardDraft, guardReady, guardBusy      bool
+	guardSaving, guardUnconfirmed          bool
+	guardGeneration                        uint64
+	guardError                             string
+	configError, configNotice              string
+	root                                   string
+	width, height                          int
+	rows                                   []sqlc.BrowseMessagesRow
+	queueBlocks                            []deliver.QueueBlock
+	retrySupported                         bool
+	retryOpen, retryBusy, retryUnconfirmed bool
+	retryTarget                            sqlc.BrowseMessagesRow
+	retryOffset                            int
+	yankOpen, copyBusy                     bool
+	yankTarget                             sqlc.BrowseMessagesRow
+	clipboardOSC52                         bool
+	clipboardWrite                         func(context.Context, string) error
+	senders, recipients                    []string
+	next                                   int64
+	selected, top, detailOffset            int
+	metadataOffset                         int
+	pendingSelection, pendingTop           int
+	pendingFrom                            string
+	filter, draft                          Filter
+	popup                                  bool
+	helpOpen                               bool
+	helpOffset                             int
+	field                                  int
+	auto                                   bool
+	timer                                  uint64
+	token                                  uint64
+	busy, loaded                           bool
+	cancel                                 context.CancelFunc
+	lastError                              string
+	notice                                 string
+	styles                                 theme
+	dark, noColor                          bool
+	backgroundKnown                        bool
+	loading                                spinner.Model
 }
 
 func NewModel(ctx context.Context, loader Loader, root string, language i18n.Language) *Model {
 	mono := noColorEnv()
-	m := &Model{ctx: ctx, loader: loader, root: root, language: language, baseLanguage: language, preferences: defaultPreferences(), auto: true, dark: true, noColor: mono, loading: spinner.New()}
+	m := &Model{ctx: ctx, loader: loader, root: root, language: language, baseLanguage: language, preferences: defaultPreferences(), auto: true, dark: true, noColor: mono, loading: spinner.New(), clipboardWrite: writePBCopy}
 	m.refreshTheme()
 	return m
 }
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.fetch(false), tea.RequestBackgroundColor, m.tick())
+	return tea.Batch(m.fetch(false), tea.RequestBackgroundColor, m.tick(), tea.RequestCapability("Ms"))
 }
 
 func (m *Model) selectedID() string {
@@ -80,7 +89,7 @@ func (m *Model) selectedID() string {
 	return m.rows[m.selected].ID
 }
 func (m *Model) fetch(appendPage bool) tea.Cmd {
-	if m.busy {
+	if m.busy || m.retryBusy {
 		return nil
 	}
 	// 一次性偏好通知在下一次資料操作後讓回計數；設定錯誤另存，不在此清除。
@@ -201,6 +210,29 @@ func (m *Model) clearDraftField() {
 func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	defer m.clampLayout()
 	switch msg := message.(type) {
+	case tea.CapabilityMsg:
+		if supportsOSC52(msg.Content) {
+			m.clipboardOSC52 = true
+		}
+	case copiedMsg:
+		m.copyBusy = false
+		switch {
+		case msg.err != nil:
+			m.notice = m.text("Copy failed; clipboard was not confirmed.") + " " + clean(msg.err.Error())
+		case msg.osc52:
+			m.notice = m.text("OSC 52 copy request sent; paste to verify.")
+		default:
+			m.notice = m.text("Copied via pbcopy.")
+		}
+	case retryMsg:
+		m.retryBusy, m.retryOpen = false, false
+		if msg.err != nil {
+			m.retryUnconfirmed = true
+			m.notice = m.text("Retry outcome unconfirmed; refresh before another attempt.") + " " + clean(msg.err.Error())
+		} else {
+			m.notice = m.text("Batch requeued; not a delivery receipt.")
+		}
+		return m, m.fetch(false)
 	case guardMsg:
 		m.guardUpdate(msg)
 	case tea.BackgroundColorMsg:
@@ -263,6 +295,9 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.notice = m.text("Selection no longer matches filters; moved to first row.")
 			}
 		}
+		m.queueBlocks = msg.page.QueueBlocks
+		m.retrySupported = msg.page.RetrySupported
+		m.retryUnconfirmed = false
 		m.next = msg.page.NextBefore
 		m.senders = msg.page.Senders
 		m.recipients = msg.page.Recipients
@@ -271,9 +306,15 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		m.configNotice = ""
 		key := msg.String()
-		if key == "ctrl+c" || (key == "q" && ((!m.popup && !m.preferencesOpen && !m.helpOpen) || m.width < minimumWidth || m.height < minimumHeight)) {
+		if key == "ctrl+c" || (key == "q" && ((!m.popup && !m.preferencesOpen && !m.helpOpen && !m.retryOpen && !m.yankOpen) || m.width < minimumWidth || m.height < minimumHeight)) {
 			m.cancelFetch()
 			return m, tea.Quit
+		}
+		if m.retryOpen {
+			return m, m.retryKey(key)
+		}
+		if m.yankOpen {
+			return m, m.yankKey(key)
 		}
 		if key == "ctrl+r" {
 			if m.guardBusy {
@@ -322,6 +363,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch key {
+		case "y":
+			m.openYank()
+		case "ctrl+enter":
+			m.openRetry()
 		case "g":
 			m.jumpLoaded(0)
 		case "G", "shift+g":

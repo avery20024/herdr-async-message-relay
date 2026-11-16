@@ -34,6 +34,12 @@ ORDER BY seq LIMIT ?;
 -- name: LatestBatch :one
 SELECT * FROM batches WHERE recipient = ? ORDER BY rowid DESC LIMIT 1;
 
+-- name: UncertainQueueBlocks :many
+SELECT b.* FROM batches AS b
+WHERE b.state = 'uncertain'
+  AND b.rowid = (SELECT MAX(latest.rowid) FROM batches AS latest WHERE latest.recipient = b.recipient)
+ORDER BY b.recipient;
+
 -- name: InsertBatch :exec
 INSERT INTO batches (id, recipient, pane, baseline_seq, state, created_at, updated_at)
 VALUES (?, ?, ?, ?, 'dispatching', ?, ?);
@@ -94,6 +100,11 @@ SELECT * FROM messages
 WHERE recipient = sqlc.arg(recipient) AND state IN ('queued','uncertain')
   AND (state = 'queued' OR (SELECT COUNT(*) FROM batch_members WHERE message_id = messages.id) < CAST(sqlc.arg(max_attempts) AS INTEGER))
 ORDER BY seq LIMIT sqlc.arg(page_limit);
+
+-- name: PreviouslyAttemptedPending :many
+SELECT messages.id FROM messages
+WHERE recipient = ? AND state IN ('queued','uncertain')
+  AND EXISTS (SELECT 1 FROM batch_members WHERE message_id = messages.id);
 
 -- name: HeldMessages :many
 SELECT seq, id FROM messages

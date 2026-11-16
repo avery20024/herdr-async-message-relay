@@ -20,6 +20,8 @@ func cliConfig(t *testing.T) deliver.Config {
 	for _, key := range []string{"HERDR_ENV", "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_RELAY_FROM", "HERDR_SEND_FROM"} {
 		t.Setenv(key, "")
 	}
+	// 測試固定以英文執行，避免系統語系影響錯誤訊息字串比對。
+	t.Setenv("HERDR_RELAY_LANG", "en")
 	t.Setenv("HERDR_BIN_PATH", filepath.Join(t.TempDir(), "no-herdr"))
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "角色"), 0700); err != nil {
