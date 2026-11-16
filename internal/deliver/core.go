@@ -88,6 +88,10 @@ func (h CLICore) get(ctx context.Context, address string) (Agent, error) {
 	}
 	if t.Foreground != nil {
 		a.ForegroundCWD = t.Foreground.CWD
+	} else {
+		// 前景行程暫時無法取得時（如 Claude Code 重啟過渡期），退回終端機自身 CWD。
+		// RoleFromAgent 仍會核對此路徑在 root 內，不放寬安全邊界。
+		a.ForegroundCWD = t.CWD
 	}
 	if t.Status != nil && t.Status.App != "" && t.Foreground != nil && t.Foreground.PID > 0 && t.Created > 0 && t.PID > 0 {
 		a.Status = t.Status.State
@@ -161,8 +165,9 @@ func (h CLICore) PromptAgent(ctx context.Context, role string, baseline Agent, b
 	if err != nil {
 		return err
 	}
-	// hc 0.1.21 的 turn/status 是貼入前快照，不是送出後回合；started=false 仍表示已貼入，非已讀。
-	// 只接受吻合原快照的結構化確認；缺欄位或競態保守交人工核對。
+	// hc 0.1.21 的 turn/status 是貼入前快照，不是送出後回合；turn 與 baseline 吻合表示
+	// 貼入了對的座位與回合。done 模式下貼入後目標可能立即進入 working，允許此競態；
+	// idle 模式（使用 --if idle）下前快照必須仍是 idle，其他組合保守交人工核對。
 	var response struct {
 		Turn    *int64          `json:"turn"`
 		Status  string          `json:"status"`
@@ -172,7 +177,8 @@ func (h CLICore) PromptAgent(ctx context.Context, role string, baseline Agent, b
 	if err := json.Unmarshal(data, &response); err != nil {
 		return fmt.Errorf("invalid hc submission response: %w", err)
 	}
-	if response.Turn == nil || *response.Turn != *baseline.Seq || response.Status != current.Status || response.Started == nil || (len(response.Error) > 0 && string(response.Error) != "null") {
+	validStatus := response.Status == current.Status || (current.Status == "done" && response.Status == "working")
+	if response.Turn == nil || *response.Turn != *baseline.Seq || !validStatus || response.Started == nil || (len(response.Error) > 0 && string(response.Error) != "null") {
 		return errors.New("hc submission response missing confirmation")
 	}
 	return nil

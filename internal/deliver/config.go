@@ -117,9 +117,19 @@ func LoadConfig(root string) (c Config, err error) {
 	if err != nil {
 		return
 	}
-	c.CommandTimeout = 10 * time.Second
+	timeout, e := EnvInt("DELIVER_COMMAND_TIMEOUT_MS", 10000, 1000, 120000)
+	if e != nil {
+		err = e
+		return
+	}
+	c.CommandTimeout = time.Duration(timeout) * time.Millisecond
 	if c.IsCore() {
 		// core 提交結果不明須人工核對，不沿用舊後端的自動重送。
+		// worker 環境（無 HC_TERMINAL_SOCKET）下 hc send 偶爾需要較長等待；
+		// 未設 DELIVER_COMMAND_TIMEOUT_MS 時 core 預設 30s，避免 10s 超時誤報。
+		if os.Getenv("DELIVER_COMMAND_TIMEOUT_MS") == "" {
+			c.CommandTimeout = 30 * time.Second
+		}
 		c.MaxAttempts = 1
 	}
 	c.Herdr = os.Getenv("HERDR_BIN_PATH")
