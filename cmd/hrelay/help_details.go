@@ -154,7 +154,7 @@ func buildCommandHelpTopics() map[string]commandHelp {
 				"In filters, d clears the selected draft field; P (Shift+P) clears all draft fields.",
 				"On the main screen, P (Shift+P) clears applied filters; U/D still pages the body.",
 				"q on the main screen or Ctrl+C anywhere exits the UI, not the relay. An interactive terminal and UI-capable worker are required.",
-				"Times use Asia/Taipei. Submission is not a read receipt; missing delivery evidence is shown as a dash.",
+				"Times use the local time zone; HERDR_RELAY_TZ=<IANA zone> overrides it. Submission is not a read receipt; missing delivery evidence is shown as a dash.",
 			},
 			examples: []string{"hrelay --root /absolute/team ui", "hrelay --lang zh-TW --root /absolute/team ui"},
 		},

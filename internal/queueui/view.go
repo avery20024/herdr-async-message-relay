@@ -2,6 +2,7 @@ package queueui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -39,7 +40,17 @@ func cell(s string, width int) string {
 	return s + strings.Repeat(" ", max(0, width-ansi.StringWidth(s)))
 }
 
-var taipei = time.FixedZone("Asia/Taipei", 8*60*60)
+// displayZone is the zone used for every timestamp in the UI. It is the local
+// system zone unless HERDR_RELAY_TZ names an IANA zone (for example Asia/Taipei).
+// An unknown name falls back to the local zone.
+var displayZone = func() *time.Location {
+	if name := os.Getenv("HERDR_RELAY_TZ"); name != "" {
+		if loc, err := time.LoadLocation(name); err == nil {
+			return loc
+		}
+	}
+	return time.Local
+}()
 
 func stamp(ms int64, full bool) string {
 	if ms <= 0 {
@@ -49,7 +60,7 @@ func stamp(ms int64, full bool) string {
 	if full {
 		layout = "2006-01-02 15:04:05 -07:00"
 	}
-	return time.UnixMilli(ms).In(taipei).Format(layout)
+	return time.UnixMilli(ms).In(displayZone).Format(layout)
 }
 func delivered(row sqlc.BrowseMessagesRow) int64 {
 	if row.State == "submitted" && row.BatchState.Valid && row.BatchState.String == "submitted" && row.BatchUpdatedAt.Valid {
