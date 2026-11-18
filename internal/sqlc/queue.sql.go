@@ -144,6 +144,18 @@ func (q *Queries) BrowseMessages(ctx context.Context, arg BrowseMessagesParams) 
 	return items, nil
 }
 
+const cancelMessage = `-- name: CancelMessage :execrows
+UPDATE messages SET state = 'canceled' WHERE id = ? AND state = 'queued'
+`
+
+func (q *Queries) CancelMessage(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, cancelMessage, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const claimMessage = `-- name: ClaimMessage :execrows
 UPDATE messages SET state = 'dispatching', batch_id = ? WHERE id = ? AND state = 'queued'
 `

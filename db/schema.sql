@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS messages (
     recipient TEXT NOT NULL,
     body TEXT NOT NULL,
     created_at INTEGER NOT NULL,
-    state TEXT NOT NULL CHECK (state IN ('queued','dispatching','submitted','uncertain')),
+    state TEXT NOT NULL CHECK (state IN ('queued','dispatching','submitted','uncertain','canceled')),
     batch_id TEXT REFERENCES batches(id)
 );
 CREATE TABLE IF NOT EXISTS batch_members (

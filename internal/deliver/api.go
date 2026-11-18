@@ -139,6 +139,18 @@ func (a API) Handler() http.Handler {
 		}
 		respond(w, 200, map[string]any{"project_root": a.Config.Root, "backend": a.Config.BackendName(), "core_socket": a.Config.CoreSocket, "counts": counts, "messages": messages, "batches": batches, "queue_blocks": blocks, "retry_supported": true, "batch_size": a.Config.BatchSize, "batch_bytes": a.Config.BatchBytes, "poll_ms": a.Config.Poll.Milliseconds()})
 	})
+	mux.HandleFunc("POST /v1/messages/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
+		msgID := r.PathValue("id")
+		if !strings.HasPrefix(msgID, "msg-") {
+			apiError(w, 400, "invalid message ID")
+			return
+		}
+		if err := a.Store.Cancel(r.Context(), msgID); err != nil {
+			apiError(w, 409, err.Error())
+			return
+		}
+		respond(w, 200, map[string]bool{"canceled": true})
+	})
 	mux.HandleFunc("POST /v1/batches/{id}/resolve", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Action      string `json:"action"`

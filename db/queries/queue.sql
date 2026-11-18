@@ -125,3 +125,6 @@ UPDATE batches SET state = 'uncertain', updated_at = ?, detail = ? WHERE id = ? 
 
 -- name: RecoverBatchMessages :exec
 UPDATE messages SET state = 'uncertain' WHERE batch_id = ? AND state = 'dispatching';
+
+-- name: CancelMessage :execrows
+UPDATE messages SET state = 'canceled' WHERE id = ? AND state = 'queued';
