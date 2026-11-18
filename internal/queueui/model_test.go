@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/avery20024/herdr-async-message-relay/internal/deliver"
@@ -247,7 +248,19 @@ func TestTimeEvidenceDoesNotInventDelivery(t *testing.T) {
 	if delivered(row) != 1000 {
 		t.Fatal("automatic record missing")
 	}
+	saved := displayZone
+	displayZone = time.FixedZone("Asia/Taipei", 8*60*60)
+	defer func() { displayZone = saved }()
 	if stamp(1000, true) != "1970-01-01 08:00:01 +08:00" || stamp(0, false) != "—" {
 		t.Fatal("incorrect timezone or missing time")
+	}
+}
+
+func TestDisplayZoneFollowsLocalUnlessOverridden(t *testing.T) {
+	saved := displayZone
+	defer func() { displayZone = saved }()
+	displayZone = time.UTC
+	if got := stamp(1000, true); got != "1970-01-01 00:00:01 +00:00" {
+		t.Fatalf("UTC display zone: got %q", got)
 	}
 }

@@ -20,7 +20,7 @@ func TestUIDetailedHelpDocumentsReadOnlyControls(t *testing.T) {
 		if err := printCommandHelp(&out, language, "ui"); err != nil {
 			t.Fatal(err)
 		}
-		for _, text := range []string{"Ctrl+W", "Ctrl+P", "Ctrl+C", "Asia/Taipei", "ui"} {
+		for _, text := range []string{"Ctrl+W", "Ctrl+P", "Ctrl+C", "HERDR_RELAY_TZ", "ui"} {
 			if !strings.Contains(out.String(), text) {
 				t.Fatalf("missing %s", text)
 			}

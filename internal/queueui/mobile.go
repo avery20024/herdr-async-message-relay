@@ -73,7 +73,7 @@ func (m *Model) cardLines() []string {
 		}
 		stored := "—"
 		if row.CreatedAt > 0 {
-			stored = time.UnixMilli(row.CreatedAt).In(taipei).Format("15:04")
+			stored = time.UnixMilli(row.CreatedAt).In(displayZone).Format("15:04")
 		}
 		second := "  " + cell(stored, 5) + " " + cell(summaryText(row.Body), max(1, width-8))
 		if i == m.selected {
