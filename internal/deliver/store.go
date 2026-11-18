@@ -167,6 +167,17 @@ func (s *Store) Finish(ctx context.Context, id, state, detail string) error {
 	})
 }
 
+func (s *Store) Cancel(ctx context.Context, msgID string) error {
+	n, err := s.Q.CancelMessage(ctx, msgID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("message not found or not in queued state")
+	}
+	return nil
+}
+
 func (s *Store) Resolve(ctx context.Context, id, action, note string) error {
 	if action != "retry" && action != "submitted" {
 		return errors.New("action must be retry or submitted")

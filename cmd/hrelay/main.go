@@ -129,7 +129,7 @@ func run(ctx context.Context, args []string) (err error) {
 		return err
 	}
 	if global.NArg() < 1 {
-		return i18n.NewError("usage: hrelay [--lang auto|en|zh-TW] [--root PATH] help|version|init|ps|stop|start|rm|cli|server|service|serve|send|status|show|resolve")
+		return i18n.NewError("usage: hrelay [--lang auto|en|zh-TW] [--root PATH] help|version|init|ps|stop|start|rm|cli|server|service|serve|send|status|show|resolve|cancel")
 	}
 	if handled, helpErr := dispatchHelp(global.Args(), language); handled {
 		return helpErr
@@ -288,6 +288,15 @@ func run(ctx context.Context, args []string) (err error) {
 			return i18n.NewError("resolve requires --batch batch-ID")
 		}
 		return call(ctx, c, "POST", "/v1/batches/"+*id+"/resolve", map[string]any{"action": *action, "note": *note, "confirm": *confirm})
+	case "cancel":
+		msgID := f.String("msg", "", "queued message ID")
+		if err := flagsResult(ctx, f, f.Parse(rest)); err != nil {
+			return err
+		}
+		if f.NArg() != 0 || !strings.HasPrefix(*msgID, "msg-") || strings.ContainsAny(*msgID, "/?#") {
+			return i18n.NewError("cancel requires --msg msg-ID")
+		}
+		return call(ctx, c, "POST", "/v1/messages/"+*msgID+"/cancel", nil)
 	default:
 		return i18n.Errorf("unknown command %q", command)
 	}

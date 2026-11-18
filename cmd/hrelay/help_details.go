@@ -197,6 +197,17 @@ func buildCommandHelpTopics() map[string]commandHelp {
 			},
 			examples: []string{"hrelay --root /absolute/team show batch-EXAMPLE", "hrelay --root /absolute/team resolve --batch batch-EXAMPLE --action submitted --note 'Verified the target received this batch.' --confirm"},
 		},
+		"cancel": {
+			syntax: "cancel --msg msg-ID",
+			options: []helpOption{
+				{"msg", "msg-ID", "queued message ID to cancel"},
+			},
+			notes: []string{
+				"Only queued messages can be canceled; dispatching, submitted and uncertain messages cannot.",
+				"Canceled messages are retained in history but will not be delivered.",
+			},
+			examples: []string{"hrelay --root /absolute/team cancel --msg msg-EXAMPLE"},
+		},
 		"server": {
 			syntax: "server on|off|restart|status",
 			subcommands: []helpEntry{
