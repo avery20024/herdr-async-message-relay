@@ -41,6 +41,10 @@ hrelay --root "$TEAM" ui
 
 各版本變更、路由風險及升級注意事項見 [發布說明目錄](docs/releases/)。v0.6.0 加入依滑鼠位置分區捲動、左下淡色說明置底、欄位值強調，以及 `gg`／`G` 跳至已載入首尾資料。變更與升級注意事項見 [v0.6.0 發布說明](docs/releases/v0.6.0.md)，完整操作見 [UI 鍵位與偏好設定（英文）](docs/ui.md)。需要腳本、JSON 查詢、首次服務設定、CLI 語系旗標或復原時，再參閱 [CLI 操作與進階參考](docs/cli-reference.zh-TW.md)。
 
+## v0.10.1：取消 queued 訊息
+
+v0.10.1 新增**訊息取消**功能：`hrelay cancel --msg msg-ID` 可取消 queued 狀態的訊息，使其不再投遞。daemon 提供 `POST /v1/messages/{id}/cancel` 端點；只有 `queued` 訊息可取消，`dispatching`、`submitted` 及 `uncertain` 訊息不受影響。已取消的訊息保留於佇列紀錄中。全新安裝無需 schema 遷移；既有資料庫於首次啟動時自動升級。詳見 [v0.10.1 變更說明](docs/releases/v0.10.1.md)。
+
 ## v0.10.0：uncertain 重試 UI、複製快捷鍵與 core 修復
 
 v0.10.0 新增 core **uncertain 重試 UI**：`status` 回傳 `queue_blocks` 阻塞原因與 `retry_supported`；在 TUI 選取 uncertain 批次後按 Ctrl+Enter → y 授權重試。另加 **y 複製快捷鍵**（yy／yi／yb／ys／yr），支援 OSC 52 或 pbcopy。同批修正三項 core 投遞 bug：前景行程不可用時的 ForegroundCWD 退回邏輯、貼入後 done→working 競態許可，以及 core 命令逾時預設提高為 30 秒。不需新 worker API 或 schema 遷移。詳見 [v0.10.0 變更說明](docs/releases/v0.10.0.md)。

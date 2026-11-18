@@ -41,6 +41,10 @@ For a configured environment with `DELIVER_ROOT`, just run `hrelay ui` from any 
 
 Per-release changes, routing risks and upgrade cautions are in [docs/releases](docs/releases/). v0.6.0 added pointer-targeted wheel scrolling, pinned muted metadata notices, accented values, and `gg` / `G` jumps to the first / last currently loaded message. See [v0.6.0 changes and upgrade cautions](docs/releases/v0.6.0.md) and [UI controls and preferences](docs/ui.md). For scripts, JSON inspection, first-time service setup, CLI language flags or recovery, see the [CLI operations and advanced reference](docs/cli-reference.md).
 
+## v0.10.1: cancel queued messages
+
+v0.10.1 adds **message cancellation**: `hrelay cancel --msg msg-ID` cancels a queued message so it is never delivered. The daemon exposes `POST /v1/messages/{id}/cancel`; only `queued` messages can be canceled — `dispatching`, `submitted`, and `uncertain` messages are unaffected. Canceled messages are retained in history. No new schema migration is required on fresh installs; existing databases are upgraded automatically on first start. See [v0.10.1 changes and upgrade notes](docs/releases/v0.10.1.md).
+
 ## v0.10.0: uncertain retry UI, copy shortcuts, core delivery fixes
 
 v0.10.0 adds the core **uncertain retry UI**: `status` returns `queue_blocks` barriers and `retry_supported`; select an uncertain batch in the TUI and use Ctrl+Enter → y to authorize a retry. It also adds **y copy shortcuts** (yy/yi/yb/ys/yr) with OSC 52/pbcopy backend detection. Three core delivery fixes ensure role recognition when the foreground process is unavailable, allow the done→working status race after paste, and raise the core command timeout default to 30 s. No new worker API or schema migration. See [v0.10.0 changes and upgrade notes](docs/releases/v0.10.0.md).
