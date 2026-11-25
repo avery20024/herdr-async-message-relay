@@ -128,3 +128,17 @@ UPDATE messages SET state = 'uncertain' WHERE batch_id = ? AND state = 'dispatch
 
 -- name: CancelMessage :execrows
 UPDATE messages SET state = 'canceled' WHERE id = ? AND state = 'queued';
+
+-- name: CancelUncertainBatch :execrows
+UPDATE batches SET state = 'resolved_submitted', updated_at = ?, detail = ?
+WHERE id = ? AND state = 'uncertain';
+
+-- name: CancelUncertainMessages :execrows
+UPDATE messages SET state = 'canceled' WHERE batch_id = ? AND state = 'uncertain';
+
+-- name: GetUncertainBatchMessages :many
+SELECT messages.id, messages.sender, messages.recipient, messages.body, messages.state, messages.seq,
+       batches.pane AS batch_pane
+FROM messages JOIN batches ON messages.batch_id = batches.id
+WHERE batches.id = ? AND batches.state = 'uncertain' AND messages.state = 'uncertain'
+ORDER BY messages.seq;

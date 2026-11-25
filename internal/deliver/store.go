@@ -178,6 +178,58 @@ func (s *Store) Cancel(ctx context.Context, msgID string) error {
 	return nil
 }
 
+func (s *Store) CancelUncertainBatch(ctx context.Context, batchID string) error {
+	return s.transaction(ctx, func(q *sqlc.Queries) error {
+		n, err := q.CancelUncertainBatch(ctx, sqlc.CancelUncertainBatchParams{
+			ID:        batchID,
+			UpdatedAt: time.Now().UnixMilli(),
+			Detail:    "operator manually canceled uncertain delivery",
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return errors.New("batch not found or not in uncertain state")
+		}
+		_, err = q.CancelUncertainMessages(ctx, sql.NullString{String: batchID, Valid: true})
+		return err
+	})
+}
+
+type UncertainBatch struct {
+	Pane     string
+	Messages []sqlc.GetUncertainBatchMessagesRow
+}
+
+func (s *Store) GetUncertainBatch(ctx context.Context, batchID string) (*UncertainBatch, error) {
+	rows, err := s.Q.GetUncertainBatchMessages(ctx, batchID)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, errors.New("batch not found or has no uncertain messages")
+	}
+	return &UncertainBatch{Pane: rows[0].BatchPane, Messages: rows}, nil
+}
+
+func (s *Store) MarkBatchDirectSent(ctx context.Context, batchID string) error {
+	return s.transaction(ctx, func(q *sqlc.Queries) error {
+		n, err := q.ResolveBatch(ctx, sqlc.ResolveBatchParams{
+			ID:        batchID,
+			State:     "resolved_submitted",
+			Detail:    "operator resent directly via hc send",
+			UpdatedAt: time.Now().UnixMilli(),
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return errors.New("batch not found or not in uncertain state")
+		}
+		return q.ResolveMessagesSubmitted(ctx, sql.NullString{String: batchID, Valid: true})
+	})
+}
+
 func (s *Store) Resolve(ctx context.Context, id, action, note string) error {
 	if action != "retry" && action != "submitted" {
 		return errors.New("action must be retry or submitted")

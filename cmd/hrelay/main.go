@@ -22,6 +22,7 @@ import (
 	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 	"github.com/avery20024/herdr-async-message-relay/internal/queueui"
 	"github.com/avery20024/herdr-async-message-relay/internal/service"
+	sqlcpkg "github.com/avery20024/herdr-async-message-relay/internal/sqlc"
 )
 
 // version 由發布建置的 ldflags 注入；開發時直接 go run 則顯示 dev。
@@ -297,6 +298,50 @@ func run(ctx context.Context, args []string) (err error) {
 			return i18n.NewError("cancel requires --msg msg-ID")
 		}
 		return call(ctx, c, "POST", "/v1/messages/"+*msgID+"/cancel", nil)
+	case "cancel-uncertain":
+		batchID := f.String("batch", "", "uncertain batch ID")
+		if err := flagsResult(ctx, f, f.Parse(rest)); err != nil {
+			return err
+		}
+		if f.NArg() != 0 || !strings.HasPrefix(*batchID, "batch-") || strings.ContainsAny(*batchID, "/?#") {
+			return i18n.NewError("cancel-uncertain requires --batch batch-ID")
+		}
+		store, err := deliver.OpenStore(ctx, c.DBPath())
+		if err != nil {
+			return err
+		}
+		defer store.DB.Close()
+		return store.CancelUncertainBatch(ctx, *batchID)
+	case "resend":
+		batchID := f.String("batch", "", "uncertain batch ID")
+		if err := flagsResult(ctx, f, f.Parse(rest)); err != nil {
+			return err
+		}
+		if f.NArg() != 0 || !strings.HasPrefix(*batchID, "batch-") || strings.ContainsAny(*batchID, "/?#") {
+			return i18n.NewError("resend requires --batch batch-ID")
+		}
+		if !c.IsCore() {
+			return i18n.NewError("resend requires core backend (HC_SOCKET must be set)")
+		}
+		store, err := deliver.OpenStore(ctx, c.DBPath())
+		if err != nil {
+			return err
+		}
+		defer store.DB.Close()
+		batch, err := store.GetUncertainBatch(ctx, *batchID)
+		if err != nil {
+			return err
+		}
+		msgs := make([]sqlcpkg.Message, len(batch.Messages))
+		for i, row := range batch.Messages {
+			msgs[i] = sqlcpkg.Message{ID: row.ID, Sender: row.Sender, Recipient: row.Recipient, Body: row.Body, State: row.State, Seq: row.Seq}
+		}
+		body := deliver.RenderBatch(*batchID, msgs)
+		core := deliver.CLICore{Binary: c.Core, Socket: c.CoreSocket, Root: c.Root, Timeout: c.CommandTimeout}
+		if err := core.SendDirect(ctx, batch.Pane, body); err != nil {
+			return err
+		}
+		return store.MarkBatchDirectSent(ctx, *batchID)
 	default:
 		return i18n.Errorf("unknown command %q", command)
 	}

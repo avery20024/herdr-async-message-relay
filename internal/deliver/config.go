@@ -141,6 +141,7 @@ func LoadConfig(root string) (c Config, err error) {
 }
 
 func (c Config) Socket() string { return filepath.Join(c.StateDir, "deliver.sock") }
+func (c Config) DBPath() string { return filepath.Join(c.StateDir, "queue.db") }
 func (c Config) Validate(r SendRequest) error {
 	for _, role := range []string{r.Sender, r.Recipient} {
 		if !roles.ValidName(role) {

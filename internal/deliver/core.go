@@ -147,6 +147,16 @@ func (h CLICore) Prompt(context.Context, string, string) error {
 	return errors.New("core submission requires a role and agent snapshot")
 }
 
+// SendDirect 直接送出訊息，不做 turn/session 狀態驗證；用於 uncertain 訊息的離線重送。
+// 收件端可能已收到原批次，呼叫方須自行揭露重送警示。
+func (h CLICore) SendDirect(ctx context.Context, pane, body string) error {
+	if !coreAddressPattern.MatchString(pane) {
+		return errors.New("invalid core terminal address for direct send")
+	}
+	_, err := h.run(ctx, "send", "--json", "--", pane, body)
+	return err
+}
+
 func (h CLICore) PromptAgent(ctx context.Context, role string, baseline Agent, body string) error {
 	current, err := h.get(ctx, baseline.Pane)
 	if err != nil {
