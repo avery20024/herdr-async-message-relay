@@ -178,6 +178,32 @@ func (s *Store) Cancel(ctx context.Context, msgID string) error {
 	return nil
 }
 
+// Pull 原子地將 recipient 的 queued 訊息標為 submitted 並返回，供角色主動拉取。
+func (s *Store) Pull(ctx context.Context, recipient string, limit int64) ([]sqlc.Message, error) {
+	var out []sqlc.Message
+	err := s.transaction(ctx, func(q *sqlc.Queries) error {
+		rows, err := q.GetQueuedForRecipient(ctx, sqlc.GetQueuedForRecipientParams{Recipient: recipient, Limit: limit})
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			n, err := q.SubmitMessageDirect(ctx, row.ID)
+			if err != nil {
+				return err
+			}
+			if n == 1 {
+				out = append(out, sqlc.Message{
+					ID: row.ID, IdempotencyKey: row.IdempotencyKey,
+					Sender: row.Sender, Recipient: row.Recipient, Body: row.Body,
+					CreatedAt: row.CreatedAt, State: "submitted", Seq: row.Seq,
+				})
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
 func (s *Store) CancelUncertainBatch(ctx context.Context, batchID string) error {
 	return s.transaction(ctx, func(q *sqlc.Queries) error {
 		n, err := q.CancelUncertainBatch(ctx, sqlc.CancelUncertainBatchParams{

@@ -129,6 +129,15 @@ UPDATE messages SET state = 'uncertain' WHERE batch_id = ? AND state = 'dispatch
 -- name: CancelMessage :execrows
 UPDATE messages SET state = 'canceled' WHERE id = ? AND state = 'queued';
 
+-- name: GetQueuedForRecipient :many
+SELECT id, idempotency_key, sender, recipient, body, created_at, state, seq, batch_id
+FROM messages
+WHERE recipient = ? AND state = 'queued'
+ORDER BY seq LIMIT ?;
+
+-- name: SubmitMessageDirect :execrows
+UPDATE messages SET state = 'submitted' WHERE id = ? AND state = 'queued';
+
 -- name: CancelUncertainBatch :execrows
 UPDATE batches SET state = 'resolved_submitted', updated_at = ?, detail = ?
 WHERE id = ? AND state = 'uncertain';

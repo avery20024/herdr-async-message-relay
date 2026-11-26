@@ -21,6 +21,7 @@ import (
 	"github.com/avery20024/herdr-async-message-relay/internal/deliver"
 	"github.com/avery20024/herdr-async-message-relay/internal/i18n"
 	"github.com/avery20024/herdr-async-message-relay/internal/queueui"
+	"github.com/avery20024/herdr-async-message-relay/internal/roles"
 	"github.com/avery20024/herdr-async-message-relay/internal/service"
 	sqlcpkg "github.com/avery20024/herdr-async-message-relay/internal/sqlc"
 )
@@ -298,6 +299,41 @@ func run(ctx context.Context, args []string) (err error) {
 			return i18n.NewError("cancel requires --msg msg-ID")
 		}
 		return call(ctx, c, "POST", "/v1/messages/"+*msgID+"/cancel", nil)
+	case "pull":
+		roleFlag := f.String("role", "", "recipient role to pull for (default: derived from current directory)")
+		limitFlag := f.Int64("limit", 50, "max messages to pull at once")
+		if err := flagsResult(ctx, f, f.Parse(rest)); err != nil {
+			return err
+		}
+		recipient := *roleFlag
+		if recipient == "" {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			recipient, err = deliver.RoleFromDirectory(c.Root, cwd)
+			if err != nil {
+				return i18n.Errorf("cannot derive role from current directory: %w", err)
+			}
+		}
+		if !roles.ValidName(recipient) {
+			return i18n.NewError("pull requires a valid role name")
+		}
+		store, err := deliver.OpenStore(ctx, c.DBPath())
+		if err != nil {
+			return err
+		}
+		defer store.DB.Close()
+		msgs, err := store.Pull(ctx, recipient, *limitFlag)
+		if err != nil {
+			return err
+		}
+		if len(msgs) == 0 {
+			fmt.Println("no queued messages")
+			return nil
+		}
+		fmt.Print(deliver.RenderPull(recipient, msgs))
+		return nil
 	case "cancel-uncertain":
 		batchID := f.String("batch", "", "uncertain batch ID")
 		if err := flagsResult(ctx, f, f.Parse(rest)); err != nil {

@@ -229,6 +229,8 @@ var zhTW = map[string]string{
 	"cancel-uncertain requires --batch batch-ID":           "cancel-uncertain 必須指定 --batch batch-ID",
 	"resend requires --batch batch-ID":                     "resend 必須指定 --batch batch-ID",
 	"resend requires core backend (HC_SOCKET must be set)": "resend 需要 core backend（必須設定 HC_SOCKET）",
+	"pull requires a valid role name":                      "pull 需要有效的角色名稱",
+	"cannot derive role from current directory: %w":        "無法從目前目錄推導角色：%w",
 	"queued message ID to cancel":                          "要取消的 queued 訊息 ID",
 	"Only queued messages can be canceled; dispatching, submitted and uncertain messages cannot.": "只有 queued 訊息可取消；dispatching、submitted 及 uncertain 訊息不受影響。",
 	"Canceled messages are retained in history but will not be delivered.":                        "已取消的訊息保留於紀錄中，不會投遞。",
