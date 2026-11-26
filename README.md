@@ -41,6 +41,10 @@ For a configured environment with `DELIVER_ROOT`, just run `hrelay ui` from any 
 
 Per-release changes, routing risks and upgrade cautions are in [docs/releases](docs/releases/). v0.6.0 added pointer-targeted wheel scrolling, pinned muted metadata notices, accented values, and `gg` / `G` jumps to the first / last currently loaded message. See [v0.6.0 changes and upgrade cautions](docs/releases/v0.6.0.md) and [UI controls and preferences](docs/ui.md). For scripts, JSON inspection, first-time service setup, CLI language flags or recovery, see the [CLI operations and advanced reference](docs/cli-reference.md).
 
+## v0.11.1: fix resend pane address validation
+
+v0.11.1 fixes `hrelay resend` failing with "invalid core terminal address for direct send" when the stored pane is a full session address (`t<id>@<session>`). No schema migration or daemon restart required. See [v0.11.1 changes](docs/releases/v0.11.1.md).
+
 ## v0.11.0: offline uncertain recovery and agent pull
 
 v0.11.0 adds three daemon-independent operations for handling stuck messages. **`hrelay cancel-uncertain --batch batch-ID`** cancels an uncertain batch directly in the database without a running daemon socket, transitioning all its messages to `canceled`. **`hrelay resend --batch batch-ID`** re-delivers an uncertain batch via direct `hc send` (requires `HC_SOCKET`; note: may duplicate an already-delivered batch). **`hrelay pull [--role role] [--limit N]`** lets any seat proactively fetch its own queued messages without waiting for the daemon; the role is derived from the current working directory when `--role` is omitted. No schema migration or daemon restart is required. See [v0.11.0 changes and upgrade notes](docs/releases/v0.11.0.md).
