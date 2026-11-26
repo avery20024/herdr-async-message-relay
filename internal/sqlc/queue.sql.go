@@ -156,6 +156,37 @@ func (q *Queries) CancelMessage(ctx context.Context, id string) (int64, error) {
 	return result.RowsAffected()
 }
 
+const cancelUncertainBatch = `-- name: CancelUncertainBatch :execrows
+UPDATE batches SET state = 'resolved_submitted', updated_at = ?, detail = ?
+WHERE id = ? AND state = 'uncertain'
+`
+
+type CancelUncertainBatchParams struct {
+	UpdatedAt int64  `json:"updated_at"`
+	Detail    string `json:"detail"`
+	ID        string `json:"id"`
+}
+
+func (q *Queries) CancelUncertainBatch(ctx context.Context, arg CancelUncertainBatchParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, cancelUncertainBatch, arg.UpdatedAt, arg.Detail, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const cancelUncertainMessages = `-- name: CancelUncertainMessages :execrows
+UPDATE messages SET state = 'canceled' WHERE batch_id = ? AND state = 'uncertain'
+`
+
+func (q *Queries) CancelUncertainMessages(ctx context.Context, batchID sql.NullString) (int64, error) {
+	result, err := q.db.ExecContext(ctx, cancelUncertainMessages, batchID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const claimMessage = `-- name: ClaimMessage :execrows
 UPDATE messages SET state = 'dispatching', batch_id = ? WHERE id = ? AND state = 'queued'
 `
@@ -320,6 +351,112 @@ func (q *Queries) GetMessage(ctx context.Context, id string) (Message, error) {
 		&i.BatchID,
 	)
 	return i, err
+}
+
+const getQueuedForRecipient = `-- name: GetQueuedForRecipient :many
+SELECT id, idempotency_key, sender, recipient, body, created_at, state, seq, batch_id
+FROM messages
+WHERE recipient = ? AND state = 'queued'
+ORDER BY seq LIMIT ?
+`
+
+type GetQueuedForRecipientParams struct {
+	Recipient string `json:"recipient"`
+	Limit     int64  `json:"limit"`
+}
+
+type GetQueuedForRecipientRow struct {
+	ID             string         `json:"id"`
+	IdempotencyKey string         `json:"idempotency_key"`
+	Sender         string         `json:"sender"`
+	Recipient      string         `json:"recipient"`
+	Body           string         `json:"body"`
+	CreatedAt      int64          `json:"created_at"`
+	State          string         `json:"state"`
+	Seq            int64          `json:"seq"`
+	BatchID        sql.NullString `json:"batch_id"`
+}
+
+func (q *Queries) GetQueuedForRecipient(ctx context.Context, arg GetQueuedForRecipientParams) ([]GetQueuedForRecipientRow, error) {
+	rows, err := q.db.QueryContext(ctx, getQueuedForRecipient, arg.Recipient, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetQueuedForRecipientRow{}
+	for rows.Next() {
+		var i GetQueuedForRecipientRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdempotencyKey,
+			&i.Sender,
+			&i.Recipient,
+			&i.Body,
+			&i.CreatedAt,
+			&i.State,
+			&i.Seq,
+			&i.BatchID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUncertainBatchMessages = `-- name: GetUncertainBatchMessages :many
+SELECT messages.id, messages.sender, messages.recipient, messages.body, messages.state, messages.seq,
+       batches.pane AS batch_pane
+FROM messages JOIN batches ON messages.batch_id = batches.id
+WHERE batches.id = ? AND batches.state = 'uncertain' AND messages.state = 'uncertain'
+ORDER BY messages.seq
+`
+
+type GetUncertainBatchMessagesRow struct {
+	ID        string `json:"id"`
+	Sender    string `json:"sender"`
+	Recipient string `json:"recipient"`
+	Body      string `json:"body"`
+	State     string `json:"state"`
+	Seq       int64  `json:"seq"`
+	BatchPane string `json:"batch_pane"`
+}
+
+func (q *Queries) GetUncertainBatchMessages(ctx context.Context, id string) ([]GetUncertainBatchMessagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUncertainBatchMessages, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetUncertainBatchMessagesRow{}
+	for rows.Next() {
+		var i GetUncertainBatchMessagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Sender,
+			&i.Recipient,
+			&i.Body,
+			&i.State,
+			&i.Seq,
+			&i.BatchPane,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const headMessages = `-- name: HeadMessages :many
@@ -808,6 +945,18 @@ UPDATE messages SET state = 'submitted' WHERE batch_id = ? AND state = 'uncertai
 func (q *Queries) ResolveMessagesSubmitted(ctx context.Context, batchID sql.NullString) error {
 	_, err := q.db.ExecContext(ctx, resolveMessagesSubmitted, batchID)
 	return err
+}
+
+const submitMessageDirect = `-- name: SubmitMessageDirect :execrows
+UPDATE messages SET state = 'submitted' WHERE id = ? AND state = 'queued'
+`
+
+func (q *Queries) SubmitMessageDirect(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, submitMessageDirect, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const supersedeBatchIfSettled = `-- name: SupersedeBatchIfSettled :execrows
